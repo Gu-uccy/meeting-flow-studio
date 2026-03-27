@@ -1,0 +1,13 @@
+{
+  "name": "meeting-flow-studio",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @meeting-flow/shared build && pnpm -r --parallel --filter @meeting-flow/api --filter @meeting-flow/web dev",
+    "dev:web": "pnpm --filter @meeting-flow/web dev",
+    "dev:api": "pnpm --filter @meeting-flow/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

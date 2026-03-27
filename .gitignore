@@ -1,0 +1,7 @@
+node_modules
+dist
+.turbo
+.vite
+.DS_Store
+coverage
+pnpm-lock.yaml
