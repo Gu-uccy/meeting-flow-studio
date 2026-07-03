@@ -3,5 +3,12 @@ dist
 .turbo
 .vite
 .DS_Store
+.env
+.env.*
+!.env.example
+!apps/api/.env.example
 coverage
-pnpm-lock.yaml
+.codex-dev.log
+*.log
+apps/api/data/*.db
+apps/api/data/*.db-*
