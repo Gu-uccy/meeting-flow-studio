@@ -34,6 +34,8 @@ import {
 
   actionItemStatusLabels,
 
+  meetingMemoryKindLabels,
+
   meetingNodeKinds,
 
   meetingNodeKindLabels,
@@ -41,6 +43,10 @@ import {
   meetingStatusLabels,
 
   participantRoleLabels,
+
+  type MeetingAgentRun,
+
+  type MeetingMemory,
 
   type MeetingRecord,
 
@@ -59,6 +65,8 @@ import {
 } from "@meeting-flow/shared";
 
 import { durationLabel, formatDateRange } from "../../lib/format";
+
+import { Dropdown } from "../common/Dropdown";
 
 import { Modal } from "../common/Modal";
 
@@ -123,6 +131,29 @@ type WorkflowTemplatePanelProps = {
   feishuRedirectUri: string;
 
   feishuCalendarStatusMessage: string;
+
+  meetingMemories: MeetingMemory[];
+
+  isMemoryLoading: boolean;
+
+  isMemoryMutating: boolean;
+
+  memoryError: string;
+
+  agentRun: MeetingAgentRun | null;
+
+  agentError: string;
+
+  isAgentRunning: boolean;
+
+  onDeleteMemory: (memoryId: string) => Promise<boolean>;
+
+  onUpdateMemory: (
+    memoryId: string,
+    patch: Partial<Pick<MeetingMemory, "content" | "kind" | "visibility" | "isPinned">>
+  ) => Promise<MeetingMemory | null>;
+
+  onRunAgent: () => Promise<MeetingAgentRun | null>;
 
   onConnectGoogleCalendar: () => Promise<boolean>;
 
@@ -234,6 +265,20 @@ const nodeRunLabels: Record<ProductNodeRunStatus, string> = {
 
 };
 
+const agentActionPriorityLabels: Record<MeetingAgentRun["actions"][number]["priority"], string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  critical: "紧急"
+};
+
+const agentInsightKindLabels: Record<MeetingAgentRun["insights"][number]["kind"], string> = {
+  risk: "风险",
+  opportunity: "机会",
+  context: "上下文",
+  automation: "自动化"
+};
+
 
 
 function getFallbackRun(runs: ProductWorkflowRun[], templateId: string, meetingId?: string | null) {
@@ -306,7 +351,7 @@ function statusClass(status: ProductWorkflowRunStatus | ProductNodeRunStatus) {
 
 
 
-function formatPayload(payload?: Record<string, string | number | boolean>) {
+function formatPayload(payload?: Record<string, unknown>) {
 
   return Object.entries(payload ?? {}).map(([key, value]) => ({
 
@@ -964,6 +1009,26 @@ export function WorkflowTemplatePanel({
 
   feishuCalendarStatusMessage,
 
+  meetingMemories,
+
+  isMemoryLoading,
+
+  isMemoryMutating,
+
+  memoryError,
+
+  agentRun,
+
+  agentError,
+
+  isAgentRunning,
+
+  onDeleteMemory,
+
+  onUpdateMemory,
+
+  onRunAgent,
+
   onConnectGoogleCalendar,
 
   onConnectFeishuCalendar,
@@ -1009,6 +1074,10 @@ export function WorkflowTemplatePanel({
   const [isRunDetailOpen, setIsRunDetailOpen] = useState(false);
 
   const [isCanvasZoomFocused, setIsCanvasZoomFocused] = useState(false);
+
+  const [isCanvasEditMode, setIsCanvasEditMode] = useState(false);
+
+  const [isWorkflowDetailOpen, setIsWorkflowDetailOpen] = useState(false);
 
   const lastAutoMatchedMeetingId = useRef<string | null>(null);
 
@@ -1060,7 +1129,8 @@ export function WorkflowTemplatePanel({
 
   const blockedNodeRun = selectedRun?.nodeRuns.find((run) => run.status === "blocked" || run.status === "failed");
 
-  const isWorkflowActionBusy = isMutating || isWorkflowMutating || isCalendarMutating || isFeishuCalendarMutating;
+  const isWorkflowActionBusy =
+    isMutating || isWorkflowMutating || isCalendarMutating || isFeishuCalendarMutating || isAgentRunning;
 
 
 
@@ -1902,7 +1972,11 @@ export function WorkflowTemplatePanel({
 
     <>
 
-    <section className="workflow-shell workflow-shell--console ide-workflow">
+    <section
+      className={`workflow-shell workflow-shell--console ide-workflow${
+        isCanvasEditMode ? " is-editing" : isWorkflowDetailOpen ? " is-detail" : " is-simple"
+      }`}
+    >
 
       <div className="ide-canvas-pane">
 
@@ -1916,68 +1990,97 @@ export function WorkflowTemplatePanel({
 
           </div>
 
-          <div className="workflow-header-actions">
-
-            <div className="canvas-editor-actions" aria-label="画布编辑">
-
-              <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={handleAddNode} type="button">
-
-                添加节点
-
-              </button>
-
-              <button
-
-                className="ghost-button"
-
-                disabled={isWorkflowActionBusy || !selectedNode || canvasNodes.length <= 1}
-
-                onClick={handleDeleteSelectedNode}
-
-                type="button"
-
-              >
-
-                删除节点
-
-              </button>
-
-              <button
-
-                className="ghost-button"
-
-                disabled={isWorkflowActionBusy || !isCanvasDirty}
-
-                onClick={handleResetCanvas}
-
-                type="button"
-
-              >
-
-                撤销修改
-
-              </button>
-
-              <button
-
-                className="primary-button"
-
-                disabled={isWorkflowActionBusy || !isCanvasDirty}
-
-                onClick={() => void handleSaveCanvas()}
-
-                type="button"
-
-              >
-
-                保存画布
-
-              </button>
-
-            </div>
-
+          <div className="workflow-mode-switcher" aria-label="流程视图模式">
+            <button
+              className={!isCanvasEditMode && !isWorkflowDetailOpen ? "primary-button" : "ghost-button"}
+              onClick={() => {
+                setIsWorkflowDetailOpen(false);
+                setIsCanvasEditMode(false);
+              }}
+              type="button"
+            >
+              运行视图
+            </button>
+            <button
+              className={isCanvasEditMode ? "primary-button" : "ghost-button"}
+              onClick={() => {
+                setIsWorkflowDetailOpen(false);
+                setIsCanvasEditMode(true);
+              }}
+              type="button"
+            >
+              编辑画布
+            </button>
+            <button
+              className={isWorkflowDetailOpen ? "primary-button" : "ghost-button"}
+              onClick={() => {
+                setIsCanvasEditMode(false);
+                setIsWorkflowDetailOpen((current) => !current);
+              }}
+              type="button"
+            >
+              {isWorkflowDetailOpen ? "关闭详情" : "详情面板"}
+            </button>
           </div>
 
+          <div className="workflow-header-actions">
+            {!isCanvasEditMode && !isWorkflowDetailOpen && (
+              <div className="workflow-run-actions" aria-label="流程运行操作">
+                {selectedRun && (
+                  <button
+                    className="ghost-button"
+                    disabled={isWorkflowActionBusy}
+                    onClick={() => void handleRetryWorkflowRun()}
+                    type="button"
+                  >
+                    重新运行
+                  </button>
+                )}
+                <button
+                  className="primary-button"
+                  disabled={!selectedMeeting || !selectedTemplate || isWorkflowActionBusy}
+                  onClick={() => void (blockedNodeRun ? handleAdvanceWorkflowRun() : handleStartWorkflowRun())}
+                  type="button"
+                >
+                  {blockedNodeRun ? "继续流程" : "启动流程"}
+                </button>
+              </div>
+            )}
+
+            {isCanvasEditMode && (
+              <div className="canvas-editor-actions" aria-label="画布编辑">
+                <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={handleAddNode} type="button">
+                  添加节点
+                </button>
+                <button
+                  className="ghost-button"
+                  disabled={isWorkflowActionBusy || !selectedNode || canvasNodes.length <= 1}
+                  onClick={handleDeleteSelectedNode}
+                  type="button"
+                >
+                  删除节点
+                </button>
+                <button
+                  className="ghost-button"
+                  disabled={isWorkflowActionBusy || !isCanvasDirty}
+                  onClick={handleResetCanvas}
+                  type="button"
+                >
+                  撤销修改
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={isWorkflowActionBusy || !isCanvasDirty}
+                  onClick={() => void handleSaveCanvas()}
+                  type="button"
+                >
+                  保存画布
+                </button>
+              </div>
+            )}
+          </div>
+
+          {isCanvasEditMode && (
           <div className="workflow-template-row">
 
             <div className="template-switcher ide-tabs" aria-label="模板选择">
@@ -2004,7 +2107,27 @@ export function WorkflowTemplatePanel({
 
             </div>
 
+            <div className="node-palette node-palette--toolbar" aria-label="节点面板">
+              <span>拖入画布</span>
+              {meetingNodeKinds.map((kind) => (
+                <div
+                  className="node-palette__item"
+                  key={kind}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/reactflow-kind", kind);
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  title={`拖入画布创建 ${meetingNodeKindLabels[kind]} 节点`}
+                >
+                  <i style={{ background: toneByKind[kind] }} />
+                  <span>{meetingNodeKindLabels[kind]}</span>
+                </div>
+              ))}
+            </div>
+
           </div>
+          )}
 
         </div>
 
@@ -2013,6 +2136,7 @@ export function WorkflowTemplatePanel({
         <div className="workflow-canvas-summary" aria-label="流程运行与当前会议">
         {selectedNode && (
           <>
+            {isCanvasEditMode && (
             <div className="node-payload">
               <section>
                 <span>本次运行</span>
@@ -2071,6 +2195,7 @@ export function WorkflowTemplatePanel({
                 </section>
               )}
             </div>
+            )}
 
             <div className="ide-runtime-grid" aria-label="流程运行状态">
               <div>
@@ -2128,9 +2253,9 @@ export function WorkflowTemplatePanel({
 
             nodeTypes={nodeTypes}
 
-            nodesDraggable
+            nodesDraggable={isCanvasEditMode}
 
-            nodesConnectable
+            nodesConnectable={isCanvasEditMode}
 
             zoomOnScroll={isCanvasZoomFocused}
 
@@ -2138,17 +2263,17 @@ export function WorkflowTemplatePanel({
 
             edgesFocusable
 
-            deleteKeyCode={["Backspace", "Delete"]}
+            deleteKeyCode={isCanvasEditMode ? ["Backspace", "Delete"] : []}
 
             elementsSelectable
 
             isValidConnection={isValidConnection}
 
-            onConnect={handleConnect}
+            onConnect={isCanvasEditMode ? handleConnect : undefined}
 
-            onDragOver={handleDragOver}
+            onDragOver={isCanvasEditMode ? handleDragOver : undefined}
 
-            onDrop={handleDrop}
+            onDrop={isCanvasEditMode ? handleDrop : undefined}
 
             onEdgesChange={handleEdgesChange}
 
@@ -2218,48 +2343,9 @@ export function WorkflowTemplatePanel({
 
             </Panel>
 
-            <Panel position="top-right">
-
-              <div className="node-palette" aria-label="节点面板">
-
-                <span>拖入画布</span>
-
-                {meetingNodeKinds.map((kind) => (
-
-                  <div
-
-                    className="node-palette__item"
-
-                    key={kind}
-
-                    draggable
-
-                    onDragStart={(event) => {
-
-                      event.dataTransfer.setData("application/reactflow-kind", kind);
-
-                      event.dataTransfer.effectAllowed = "move";
-
-                    }}
-
-                    title={`拖入画布创建 ${meetingNodeKindLabels[kind]} 节点`}
-
-                  >
-
-                    <i style={{ background: toneByKind[kind] }} />
-
-                    <span>{meetingNodeKindLabels[kind]}</span>
-
-                  </div>
-
-                ))}
-
-              </div>
-
-            </Panel>
-
             <Controls showInteractive={false} />
 
+            {isCanvasEditMode && (
             <MiniMap
 
               nodeStrokeColor="#94a3b8"
@@ -2271,6 +2357,7 @@ export function WorkflowTemplatePanel({
               style={{ border: "1px solid #e5e7eb", borderRadius: 8 }}
 
             />
+            )}
 
             <Background color="#e5e7eb" gap={24} />
 
@@ -2318,6 +2405,7 @@ export function WorkflowTemplatePanel({
 
           </div>
 
+          {isWorkflowDetailOpen && (
           <div className="ide-run-log runs-panel__logs">
 
             {selectedRun ? (
@@ -2365,6 +2453,7 @@ export function WorkflowTemplatePanel({
             )}
 
           </div>
+          )}
 
         </div>
 
@@ -2372,6 +2461,7 @@ export function WorkflowTemplatePanel({
 
 
 
+      {isCanvasEditMode && (
       <aside className="ide-inspector" aria-label={selectedEdge ? "连线配置面板" : "节点配置面板"}>
 
         <div className="ide-pane-header ide-pane-header--stacked">
@@ -2580,35 +2670,20 @@ export function WorkflowTemplatePanel({
 
                   节点类型
 
-                  <select
-
-                    value={selectedNode.kind}
-
-                    onChange={(event) =>
-
+                  <Dropdown<ProductWorkflowNode["kind"]>
+                    ariaLabel="节点类型"
+                    onChange={(value) =>
                       updateCanvasNode(selectedNode.id, (node) => ({
-
                         ...node,
-
-                        kind: event.target.value as ProductWorkflowNode["kind"]
-
+                        kind: value
                       }))
-
                     }
-
-                  >
-
-                    {meetingNodeKinds.map((kind) => (
-
-                      <option key={kind} value={kind}>
-
-                        {meetingNodeKindLabels[kind]}
-
-                      </option>
-
-                    ))}
-
-                  </select>
+                    options={meetingNodeKinds.map((kind) => ({
+                      label: meetingNodeKindLabels[kind],
+                      value: kind
+                    }))}
+                    value={selectedNode.kind}
+                  />
 
                 </label>
 
@@ -2768,8 +2843,97 @@ export function WorkflowTemplatePanel({
           ) : null}
         </div>
       </aside>
+      )}
 
-      <div className="workflow-support-panel" aria-label="流程辅助信息">
+      <div className={`workflow-support-panel${isWorkflowDetailOpen ? " is-expanded" : " is-compact"}`} aria-label="流程辅助信息">
+        {isWorkflowDetailOpen && (
+          <>
+            <div className="workflow-detail-panel__header">
+              <span>DETAILS</span>
+              <strong>{selectedMeeting?.title ?? selectedTemplate.name}</strong>
+              <p>
+                {selectedRun
+                  ? `${selectedTemplate.name} / ${runStatusLabels[selectedRun.status]} / ${selectedRun.durationSeconds}s`
+                  : `${selectedTemplate.name} / 暂无运行记录`}
+              </p>
+            </div>
+
+            {selectedNode && (
+              <div className="node-payload node-payload--detail" aria-label="当前节点运行详情">
+                <section>
+                  <span>当前节点</span>
+                  <div>
+                    <code>{selectedNode.title}</code>
+                    <code>{selectedNodeRun ? nodeRunLabels[selectedNodeRun.status] : "节点未运行"}</code>
+                  </div>
+                </section>
+                <section>
+                  <span>输入</span>
+                  <div>
+                    {selectedInputPayload.length > 0 ? (
+                      selectedInputPayload.map((item) => (
+                        <code key={item.key}>
+                          {item.key}: {item.value}
+                        </code>
+                      ))
+                    ) : (
+                      <code>暂无输入</code>
+                    )}
+                  </div>
+                </section>
+                <section>
+                  <span>输出</span>
+                  <div>
+                    {selectedOutputPayload.length > 0 ? (
+                      selectedOutputPayload.map((item) => (
+                        <code key={item.key}>
+                          {item.key}: {item.value}
+                        </code>
+                      ))
+                    ) : (
+                      <code>暂无输出</code>
+                    )}
+                  </div>
+                </section>
+                {selectedNodeRun?.errorMessage && (
+                  <section className="node-payload__error">
+                    <span>异常</span>
+                    <p>{selectedNodeRun.errorMessage}</p>
+                  </section>
+                )}
+              </div>
+            )}
+
+            <section className="workflow-detail-log" aria-label="运行日志">
+              <div className="ide-section-title">
+                <strong>运行日志</strong>
+                <span>{selectedRun ? `${selectedRun.logs.length} 条` : "暂无"}</span>
+              </div>
+              {selectedRun ? (
+                selectedRun.logs.slice(-5).map((log) => (
+                  <button
+                    className={`ide-run-log__row ide-run-log__row--${log.level}${
+                      log.nodeId === selectedFlowNodeId ? " is-active" : ""
+                    }`}
+                    disabled={!log.nodeId}
+                    key={log.id}
+                    onClick={() => {
+                      if (log.nodeId) {
+                        setSelectedFlowNodeId(log.nodeId);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span>{log.time}</span>
+                    <code>{log.message}</code>
+                  </button>
+                ))
+              ) : (
+                <p className="memory-empty">等待首次运行</p>
+              )}
+            </section>
+          </>
+        )}
 
         {selectedMeeting && (
           <div className="ide-related" aria-label="会议议程预览">
@@ -2807,8 +2971,104 @@ export function WorkflowTemplatePanel({
                 </article>
               ))}
             </section>
+
+            <section className="meeting-memory-strip" aria-label="会议长期记忆">
+              <div className="ide-section-title">
+                <strong>会议记忆</strong>
+                <span>{isMemoryLoading ? "同步中" : `${meetingMemories.length} 条`}</span>
+              </div>
+              {memoryError ? <p className="memory-empty">{memoryError}</p> : null}
+              {!memoryError && !isMemoryLoading && meetingMemories.length === 0 ? (
+                <p className="memory-empty">启动并完成一次流程后，会沉淀议程、待办和阻塞经验。</p>
+              ) : null}
+              {!memoryError &&
+                meetingMemories.slice(0, 3).map((memory) => (
+                  <article className="ide-list-row memory-row" key={memory.id}>
+                    <div className="memory-row__body">
+                      <span>{memory.content}</span>
+                      <small>
+                        {memory.isPinned ? "已置顶 / " : ""}
+                        {meetingMemoryKindLabels[memory.kind]} / {memory.source}
+                      </small>
+                    </div>
+                    <div className="memory-row__actions">
+                      <button
+                        className="memory-action-button"
+                        disabled={isMemoryMutating || isWorkflowActionBusy}
+                        onClick={() => void onUpdateMemory(memory.id, { isPinned: !memory.isPinned })}
+                        type="button"
+                      >
+                        {memory.isPinned ? "取消置顶" : "置顶"}
+                      </button>
+                      <button
+                        className="memory-action-button"
+                        disabled={isMemoryMutating || isWorkflowActionBusy || memory.kind === "preference"}
+                        onClick={() => void onUpdateMemory(memory.id, { kind: "preference", isPinned: true })}
+                        type="button"
+                      >
+                        偏好
+                      </button>
+                      <button
+                        className="memory-action-button memory-action-button--danger"
+                        disabled={isMemoryMutating || isWorkflowActionBusy}
+                        onClick={() => void onDeleteMemory(memory.id)}
+                        type="button"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </article>
+                ))}
+            </section>
+
+            <section className="meeting-agent-card" aria-label="内置会议 Agent">
+              <div className="ide-section-title">
+                <strong>工作流 Agent</strong>
+                <span>{agentRun ? agentRun.model : "待运行"}</span>
+              </div>
+              {agentError ? <p className="memory-empty">{agentError}</p> : null}
+              <p className="meeting-agent-card__summary">
+                {agentRun?.summary ?? "运行 Agent 后，将自动选择匹配模板并执行会议工作流。"}
+              </p>
+              <button
+                className="primary-button meeting-agent-card__button"
+                disabled={!selectedMeeting || isWorkflowActionBusy}
+                onClick={() => void onRunAgent()}
+                type="button"
+              >
+                {isAgentRunning ? "Agent 运行中" : "运行工作流 Agent"}
+              </button>
+              {agentRun && (
+                <>
+                  <div className="meeting-agent-card__list">
+                    {agentRun.actions.slice(0, 3).map((action) => (
+                      <article className={`meeting-agent-card__item priority-${action.priority}`} key={action.id}>
+                        <span>{agentActionPriorityLabels[action.priority]}</span>
+                        <strong>{action.title}</strong>
+                        <p>{action.description}</p>
+                      </article>
+                    ))}
+                  </div>
+                  {agentRun.insights.length > 0 && (
+                    <div className="meeting-agent-card__insights">
+                      {agentRun.insights.slice(0, 2).map((insight) => (
+                        <article key={insight.id}>
+                          <span>{agentInsightKindLabels[insight.kind]}</span>
+                          <strong>{insight.title}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  <div className="meeting-agent-card__trace">
+                    {agentRun.trace.slice(-3).map((step) => (
+                      <code key={step.id}>{step.tool}: {step.output}</code>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
           </div>
-        )}
+          )}
 
         {selectedMeeting && (
           <section className="calendar-integration-card" aria-label="会议日历接入">

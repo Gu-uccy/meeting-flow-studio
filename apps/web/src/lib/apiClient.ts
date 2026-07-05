@@ -1,5 +1,10 @@
 const TOKEN_KEY = "meeting_flow_token";
 
+export function getWorkflowWebSocketUrl() {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/api/ws/workflows`;
+}
+
 export async function apiClient(url: string, options?: RequestInit): Promise<Response> {
   const token = localStorage.getItem(TOKEN_KEY);
   const headers: Record<string, string> = {};

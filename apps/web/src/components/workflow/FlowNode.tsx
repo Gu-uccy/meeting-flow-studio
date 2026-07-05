@@ -19,11 +19,11 @@ const toneByKind: Record<string, string> = {
 };
 
 const stateLabels: Record<WorkflowNodeData["state"], string> = {
-  done: "已完成",
-  running: "运行中",
-  waiting: "等待",
-  blocked: "阻塞",
-  optional: "跳过"
+  done: "\u5df2\u5b8c\u6210",
+  running: "\u8fd0\u884c\u4e2d",
+  waiting: "\u7b49\u5f85",
+  blocked: "\u963b\u585e",
+  optional: "\u8df3\u8fc7"
 };
 
 const handleStyle: CSSProperties = {

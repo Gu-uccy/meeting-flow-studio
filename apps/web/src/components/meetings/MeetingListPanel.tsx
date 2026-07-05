@@ -89,52 +89,55 @@ export function MeetingListPanel({
         ))}
       </div>
 
-      <div className="queue-controls">
-        <label>
-          <span>日期</span>
-          <input type="date" value={dateFilter} onChange={(event) => onDateFilterChange(event.target.value)} />
-        </label>
-        <label>
-          <span>类型</span>
-          <Dropdown
-            onChange={(value) => onTypeFilterChange(value as MeetingType | "all")}
-            options={[
-              { label: "全部类型", value: "all" },
-              ...Object.entries(meetingTypeLabels).map(([value, label]) => ({
-                label,
-                value: value as MeetingType
-              }))
-            ]}
-            value={typeFilter}
-          />
-        </label>
-        <label>
-          <span>组织者</span>
-          <Dropdown
-            onChange={onOrganizerFilterChange}
-            options={[
-              { label: "全部组织者", value: "all" },
-              ...organizerOptions.map((organizer) => ({
-                label: organizer,
-                value: organizer
-              }))
-            ]}
-            value={organizerFilter}
-          />
-        </label>
-        <label>
-          <span>排序</span>
-          <Dropdown
-            onChange={(value) => onSortByChange(value as MeetingSortBy)}
-            options={[
-              { label: "开始时间", value: "startAt" },
-              { label: "创建时间", value: "createdAt" },
-              { label: "更新时间", value: "updatedAt" }
-            ]}
-            value={sortBy}
-          />
-        </label>
-      </div>
+      <details className="queue-controls queue-controls--advanced">
+        <summary>更多筛选</summary>
+        <div className="queue-controls__fields">
+          <label>
+            <span>日期</span>
+            <input type="date" value={dateFilter} onChange={(event) => onDateFilterChange(event.target.value)} />
+          </label>
+          <label>
+            <span>类型</span>
+            <Dropdown
+              onChange={(value) => onTypeFilterChange(value as MeetingType | "all")}
+              options={[
+                { label: "全部类型", value: "all" },
+                ...Object.entries(meetingTypeLabels).map(([value, label]) => ({
+                  label,
+                  value: value as MeetingType
+                }))
+              ]}
+              value={typeFilter}
+            />
+          </label>
+          <label>
+            <span>组织者</span>
+            <Dropdown
+              onChange={onOrganizerFilterChange}
+              options={[
+                { label: "全部组织者", value: "all" },
+                ...organizerOptions.map((organizer) => ({
+                  label: organizer,
+                  value: organizer
+                }))
+              ]}
+              value={organizerFilter}
+            />
+          </label>
+          <label>
+            <span>排序</span>
+            <Dropdown
+              onChange={(value) => onSortByChange(value as MeetingSortBy)}
+              options={[
+                { label: "开始时间", value: "startAt" },
+                { label: "创建时间", value: "createdAt" },
+                { label: "更新时间", value: "updatedAt" }
+              ]}
+              value={sortBy}
+            />
+          </label>
+        </div>
+      </details>
 
       <div className="meeting-list scroll-area">
         {isLoading && <div className="empty-state">正在加载会议数据...</div>}
