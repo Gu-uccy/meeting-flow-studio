@@ -340,6 +340,120 @@ export const meetingDashboardSummarySchema = z.object({
 
 export type MeetingDashboardSummary = z.infer<typeof meetingDashboardSummarySchema>;
 
+export const meetingMemoryKindValues = [
+  "summary",
+  "decision",
+  "action_item",
+  "risk",
+  "preference"
+] as const;
+export const meetingMemoryKindSchema = z.enum(meetingMemoryKindValues);
+export type MeetingMemoryKind = z.infer<typeof meetingMemoryKindSchema>;
+
+export const meetingMemoryKindLabels: Record<MeetingMemoryKind, string> = {
+  summary: "会议摘要",
+  decision: "决策记录",
+  action_item: "行动项",
+  risk: "风险提示",
+  preference: "偏好记忆"
+};
+
+export const meetingMemoryVisibilityValues = ["private", "team", "organization"] as const;
+export const meetingMemoryVisibilitySchema = z.enum(meetingMemoryVisibilityValues);
+export type MeetingMemoryVisibility = z.infer<typeof meetingMemoryVisibilitySchema>;
+
+export const meetingMemorySchema = z.object({
+  id: z.string(),
+  meetingId: z.string(),
+  meetingTitle: z.string(),
+  meetingType: meetingTypeSchema,
+  ownerUserId: z.string().default(""),
+  sourceRunId: z.string().default(""),
+  kind: meetingMemoryKindSchema,
+  content: z.string(),
+  source: z.string(),
+  visibility: meetingMemoryVisibilitySchema,
+  confidence: z.number().min(0).max(1),
+  isPinned: z.boolean().default(false),
+  tags: z.array(z.string()).default([]),
+  relatedParticipantNames: z.array(z.string()).default([]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  expiresAt: z.string().optional()
+});
+
+export type MeetingMemory = z.infer<typeof meetingMemorySchema>;
+
+export const meetingAgentActionKindValues = [
+  "start_workflow",
+  "advance_blocker",
+  "sync_calendar",
+  "prepare_agenda",
+  "review_memory",
+  "update_meeting",
+  "none"
+] as const;
+
+export const meetingAgentActionKindSchema = z.enum(meetingAgentActionKindValues);
+export type MeetingAgentActionKind = z.infer<typeof meetingAgentActionKindSchema>;
+
+export const meetingAgentActionPriorityValues = ["low", "medium", "high", "critical"] as const;
+export const meetingAgentActionPrioritySchema = z.enum(meetingAgentActionPriorityValues);
+export type MeetingAgentActionPriority = z.infer<typeof meetingAgentActionPrioritySchema>;
+
+export const meetingAgentInsightKindValues = ["risk", "opportunity", "context", "automation"] as const;
+export const meetingAgentInsightKindSchema = z.enum(meetingAgentInsightKindValues);
+export type MeetingAgentInsightKind = z.infer<typeof meetingAgentInsightKindSchema>;
+
+export const meetingAgentActionSchema = z.object({
+  id: z.string(),
+  kind: meetingAgentActionKindSchema,
+  title: z.string(),
+  description: z.string(),
+  priority: meetingAgentActionPrioritySchema,
+  confidence: z.number().min(0).max(1),
+  targetId: z.string().default(""),
+  payload: z.record(z.string(), z.string()).default({})
+});
+
+export type MeetingAgentAction = z.infer<typeof meetingAgentActionSchema>;
+
+export const meetingAgentInsightSchema = z.object({
+  id: z.string(),
+  kind: meetingAgentInsightKindSchema,
+  title: z.string(),
+  description: z.string(),
+  evidence: z.array(z.string()).default([])
+});
+
+export type MeetingAgentInsight = z.infer<typeof meetingAgentInsightSchema>;
+
+export const meetingAgentTraceStepSchema = z.object({
+  id: z.string(),
+  tool: z.string(),
+  input: z.string(),
+  output: z.string()
+});
+
+export type MeetingAgentTraceStep = z.infer<typeof meetingAgentTraceStepSchema>;
+
+export const meetingAgentRunSchema = z.object({
+  id: z.string(),
+  meetingId: z.string(),
+  templateId: z.string().default(""),
+  workflowRunId: z.string().default(""),
+  executionStatus: z.enum(["not_started", "queued", "running", "blocked", "completed", "failed"]).default("not_started"),
+  createdAt: z.string(),
+  status: z.enum(["completed", "degraded"]),
+  summary: z.string(),
+  model: z.string(),
+  actions: z.array(meetingAgentActionSchema),
+  insights: z.array(meetingAgentInsightSchema),
+  trace: z.array(meetingAgentTraceStepSchema)
+});
+
+export type MeetingAgentRun = z.infer<typeof meetingAgentRunSchema>;
+
 export const meetingIntakeSchema = createMeetingSchema.pick({
   title: true,
   host: true,
@@ -443,6 +557,15 @@ export type WorkflowNodeConfigField = {
   kind: "text" | "select" | "textarea" | "toggle";
 };
 
+export type ProductWorkflowNodeExecutor = {
+  type: "aiApplication" | "system" | "manual";
+  applicationId?: string;
+  label: string;
+  runtime: "agent" | "workflow" | "system" | "human";
+  inputMapping: Record<string, string>;
+  outputMapping: Record<string, string>;
+};
+
 export type ProductWorkflowNode = {
   id: string;
   kind: MeetingNodeKind;
@@ -453,6 +576,11 @@ export type ProductWorkflowNode = {
   inputs: string[];
   outputs: string[];
   configFields: WorkflowNodeConfigField[];
+  executor?: ProductWorkflowNodeExecutor;
+  agentInputSchema?: AiApplicationInputField[];
+  agentOutputSchema?: AiApplicationOutputField[];
+  agentPromptConfig?: AiApplicationPromptConfig;
+  agentVersions?: AiApplicationVersion[];
 };
 
 export type ProductWorkflowEdge = {
@@ -491,8 +619,8 @@ export type ProductNodeRun = {
   status: ProductNodeRunStatus;
   startedAt?: string;
   endedAt?: string;
-  inputPayload?: Record<string, string | number | boolean>;
-  outputPayload?: Record<string, string | number | boolean>;
+  inputPayload?: Record<string, unknown>;
+  outputPayload?: Record<string, unknown>;
   errorMessage?: string;
 };
 
@@ -513,6 +641,296 @@ export type ProductWorkflowRun = {
   nodeRuns: ProductNodeRun[];
   logs: ProductRunLog[];
 };
+
+export type AiApplicationMode = "workflow" | "chatflow" | "agent";
+export type AiApplicationStatus = "draft" | "published";
+export type AiApplicationInputType = "text" | "textarea" | "number" | "select" | "json" | "boolean";
+
+export type AiApplicationInputField = {
+  key: string;
+  label: string;
+  type: AiApplicationInputType;
+  required: boolean;
+  description: string;
+  defaultValue: string;
+  options?: string[];
+};
+
+export type AiApplicationOutputField = {
+  key: string;
+  label: string;
+  type: "text" | "json" | "number" | "boolean";
+  description: string;
+};
+
+export type AiApplicationPromptConfig = {
+  systemPrompt: string;
+  userPrompt: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+};
+
+export type AiApplicationVersion = {
+  id: string;
+  version: string;
+  applicationId: string;
+  templateId: string;
+  nodeId: string;
+  name: string;
+  status: "snapshot" | "published";
+  summary: string;
+  createdBy: string;
+  createdAt: string;
+  inputSchema: AiApplicationInputField[];
+  outputSchema: AiApplicationOutputField[];
+  promptConfig: AiApplicationPromptConfig;
+  executor: ProductWorkflowNodeExecutor;
+};
+
+export type MiniDifyNodeCapability = {
+  kind: MeetingNodeKind;
+  name: string;
+  difyLikeName: string;
+  purpose: string;
+  requiredConfig: string[];
+  runtimeOutput: string[];
+  maturity: "ready" | "partial" | "planned";
+};
+
+export type AiApplication = {
+  id: string;
+  name: string;
+  description: string;
+  mode: AiApplicationMode;
+  status: AiApplicationStatus;
+  source: "workflow" | "node";
+  templateId: string;
+  nodeId?: string;
+  nodeKind?: MeetingNodeKind;
+  category: MeetingType;
+  entrypoint: string;
+  apiEndpoint: string;
+  modelProvider: "anthropic" | "mock";
+  inputSchema: AiApplicationInputField[];
+  outputSchema: AiApplicationOutputField[];
+  promptConfig: AiApplicationPromptConfig;
+  versions: AiApplicationVersion[];
+  capabilities: MeetingNodeKind[];
+  publishedAt: string;
+  updatedAt: string;
+};
+
+export function buildNodeAgentApplicationId(templateId: string, nodeId: string) {
+  return `agent-${templateId.replace(/^template-/, "")}-${nodeId}`;
+}
+
+function buildNodeExecutor(templateId: string, node: Pick<ProductWorkflowNode, "id" | "kind" | "inputs" | "outputs">): ProductWorkflowNodeExecutor {
+  const runtimeByKind: Record<MeetingNodeKind, ProductWorkflowNodeExecutor["runtime"]> = {
+    action: "system",
+    ai: "agent",
+    decision: "agent",
+    knowledge: "agent",
+    trigger: "system"
+  };
+
+  return {
+    type: node.kind === "trigger" || node.kind === "action" ? "system" : "aiApplication",
+    applicationId:
+      node.kind === "trigger" || node.kind === "action" ? undefined : buildNodeAgentApplicationId(templateId, node.id),
+    label: node.kind === "trigger" || node.kind === "action" ? "系统执行器" : "节点智能体",
+    runtime: runtimeByKind[node.kind],
+    inputMapping: Object.fromEntries(node.inputs.map((input) => [input, `meeting.${input}`])),
+    outputMapping: Object.fromEntries(node.outputs.map((output) => [output, `node.${node.id}.${output}`]))
+  };
+}
+
+export function ensureProductWorkflowNodeExecutors(template: ProductWorkflowTemplate): ProductWorkflowTemplate {
+  return {
+    ...template,
+    nodes: template.nodes.map((node) => ({
+      ...node,
+      executor: node.executor ?? buildNodeExecutor(template.id, node)
+    }))
+  };
+}
+
+function buildNodeAgentInputSchema(node: ProductWorkflowNode): AiApplicationInputField[] {
+  if (node.agentInputSchema?.length) {
+    return node.agentInputSchema;
+  }
+
+  return [
+    defaultMeetingAppInputSchema[0],
+    ...node.inputs.map((input) => ({
+      key: input,
+      label: input,
+      type: "textarea" as const,
+      required: false,
+      description: `映射到 ${node.title} 节点的输入变量。`,
+      defaultValue: ""
+    }))
+  ];
+}
+
+function buildNodeAgentOutputSchema(node: ProductWorkflowNode): AiApplicationOutputField[] {
+  if (node.agentOutputSchema?.length) {
+    return node.agentOutputSchema;
+  }
+
+  return node.outputs.map((output) => ({
+    key: output,
+    label: output,
+    type: inferNodeAgentOutputType(output),
+    description: `${node.title} 节点写回流程上下文的输出。`
+  }));
+}
+
+function inferNodeAgentOutputType(output: string): AiApplicationOutputField["type"] {
+  const normalized = output.toLowerCase();
+
+  if (normalized.includes("count") || normalized.includes("tokens")) {
+    return "number";
+  }
+
+  if (normalized.includes("ready") || normalized.startsWith("is") || normalized.startsWith("has")) {
+    return "boolean";
+  }
+
+  if (normalized.includes("decision") || normalized.includes("draft") || normalized.includes("notes") || normalized.includes("request")) {
+    return "text";
+  }
+
+  return "json";
+}
+
+function buildNodeAgentPromptConfig(node: ProductWorkflowNode): AiApplicationPromptConfig {
+  if (node.agentPromptConfig) {
+    return node.agentPromptConfig;
+  }
+
+  const inputLines = node.inputs.map((input) => `- ${input}: {{input.${input}}}`).join("\n");
+  const outputLines = node.outputs.map((output) => `- ${output}`).join("\n");
+
+  return {
+    systemPrompt: `你是会议流程中的「${node.title}」节点智能体。请只完成该节点动作，并按输出字段返回结构化结果。`,
+    userPrompt: [
+      "会议目标：{{meeting.meetingGoal}}",
+      "会议标题：{{meeting.title}}",
+      "优先级：{{meeting.priority}}",
+      "",
+      "节点输入：",
+      inputLines || "- meetingId: {{meeting.meetingId}}",
+      "",
+      "需要产出的字段：",
+      outputLines || "- output",
+      "",
+      "请返回简洁、可被流程继续消费的结果。"
+    ].join("\n"),
+    model: "claude-sonnet-4",
+    temperature: 0.2,
+    maxTokens: 1024
+  };
+}
+
+export const defaultMeetingAppInputSchema: AiApplicationInputField[] = [
+  {
+    key: "meetingId",
+    label: "会议 ID",
+    type: "text",
+    required: true,
+    description: "作为本次应用运行的业务对象，当前执行器会用它加载会议上下文。",
+    defaultValue: "meeting-001"
+  },
+  {
+    key: "meetingGoal",
+    label: "会议目标",
+    type: "textarea",
+    required: true,
+    description: "传入 LLM 节点的主要目标变量。",
+    defaultValue: ""
+  },
+  {
+    key: "priority",
+    label: "优先级",
+    type: "select",
+    required: true,
+    description: "用于规则分支和审批策略。",
+    defaultValue: "medium",
+    options: [...meetingPriorityValues]
+  },
+  {
+    key: "participants",
+    label: "参会人",
+    type: "json",
+    required: false,
+    description: "参会人数组，可被 AI 节点用来推断角色和议程。",
+    defaultValue: "[]"
+  }
+];
+
+export const defaultMeetingAppOutputSchema: AiApplicationOutputField[] = [
+  {
+    key: "run",
+    label: "运行结果",
+    type: "json",
+    description: "工作流运行记录，包含状态、节点输出和日志。"
+  },
+  {
+    key: "memoryCount",
+    label: "沉淀记忆数",
+    type: "number",
+    description: "本次运行沉淀到会议记忆库的条目数。"
+  }
+];
+
+export const miniDifyNodeCapabilityCatalog: MiniDifyNodeCapability[] = [
+  {
+    kind: "trigger",
+    name: "触发器",
+    difyLikeName: "Start",
+    purpose: "接收外部请求、会议申请或调度事件，并生成统一运行输入。",
+    requiredConfig: ["event", "input schema", "dedupe policy"],
+    runtimeOutput: ["run input", "meeting request"],
+    maturity: "ready"
+  },
+  {
+    kind: "ai",
+    name: "LLM",
+    difyLikeName: "LLM",
+    purpose: "调用模型执行提示词，把会议目标、上下文和变量转换为结构化输出。",
+    requiredConfig: ["model", "prompt", "temperature"],
+    runtimeOutput: ["text", "structured fields", "token usage"],
+    maturity: "partial"
+  },
+  {
+    kind: "knowledge",
+    name: "知识检索",
+    difyLikeName: "Knowledge Retrieval",
+    purpose: "从纪要、项目文档或业务系统中召回运行上下文。",
+    requiredConfig: ["sources", "max docs", "missing policy"],
+    runtimeOutput: ["context pack", "citations"],
+    maturity: "partial"
+  },
+  {
+    kind: "decision",
+    name: "条件分支",
+    difyLikeName: "IF/ELSE",
+    purpose: "基于运行变量、规则表达式和审批策略控制流程走向。",
+    requiredConfig: ["condition", "approver", "timeout"],
+    runtimeOutput: ["route decision", "blocked reason"],
+    maturity: "ready"
+  },
+  {
+    kind: "action",
+    name: "工具调用",
+    difyLikeName: "Tool",
+    purpose: "把运行结果同步到日历、通知渠道、任务系统或外部 API。",
+    requiredConfig: ["channels", "retry", "output mapping"],
+    runtimeOutput: ["tool result", "side effects"],
+    maturity: "partial"
+  }
+];
 
 export const productAudienceSchema = z.object({
   role: z.string(),
@@ -849,6 +1267,68 @@ export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
     ]
   }
 ];
+
+export function buildAiApplicationsFromTemplates(templates: ProductWorkflowTemplate[]): AiApplication[] {
+  return templates.flatMap((sourceTemplate) => {
+    const template = ensureProductWorkflowNodeExecutors(sourceTemplate);
+    const capabilities = Array.from(new Set(template.nodes.map((node) => node.kind)));
+    const workflowApplication: AiApplication = {
+      id: `app-${template.id.replace(/^template-/, "")}`,
+      name: template.name.replace("工作流", "应用"),
+      description: template.description,
+      mode: "workflow",
+      status: template.status,
+      source: "workflow",
+      templateId: template.id,
+      category: template.category,
+      entrypoint: "meeting.intake",
+      apiEndpoint: `/api/workflows/runs?templateId=${template.id}`,
+      modelProvider: template.nodes.some((node) => node.kind === "ai") ? "anthropic" : "mock",
+      inputSchema: defaultMeetingAppInputSchema,
+      outputSchema: defaultMeetingAppOutputSchema,
+      promptConfig: {
+        systemPrompt: "你是会议流程应用编排器，负责按流程节点推进会议准备、决策和执行。",
+        userPrompt: "请根据会议输入启动工作流：{{meeting.meetingGoal}}",
+        model: "claude-sonnet-4",
+        temperature: 0.2,
+        maxTokens: 1024
+      },
+      versions: [],
+      capabilities,
+      publishedAt: template.status === "published" ? template.updatedAt : "",
+      updatedAt: template.updatedAt
+    };
+
+    const nodeApplications = template.nodes
+      .filter((node) => node.executor?.type === "aiApplication")
+      .map((node): AiApplication => ({
+        id: node.executor?.applicationId ?? buildNodeAgentApplicationId(template.id, node.id),
+        name: `${node.title}智能体`,
+        description: node.description,
+        mode: "agent",
+        status: template.status,
+        source: "node",
+        templateId: template.id,
+        nodeId: node.id,
+        nodeKind: node.kind,
+        category: template.category,
+        entrypoint: `meeting.node.${node.id}`,
+        apiEndpoint: `/api/apps/${node.executor?.applicationId ?? buildNodeAgentApplicationId(template.id, node.id)}/debug`,
+        modelProvider: "anthropic",
+        inputSchema: buildNodeAgentInputSchema(node),
+        outputSchema: buildNodeAgentOutputSchema(node),
+        promptConfig: buildNodeAgentPromptConfig(node),
+        versions: node.agentVersions ?? [],
+        capabilities: [node.kind],
+        publishedAt: template.status === "published" ? template.updatedAt : "",
+        updatedAt: template.updatedAt
+      }));
+
+    return [workflowApplication, ...nodeApplications];
+  });
+}
+
+export const miniDifyApplications: AiApplication[] = buildAiApplicationsFromTemplates(productWorkflowTemplates);
 
 export const productWorkflowRuns: ProductWorkflowRun[] = [
   {
