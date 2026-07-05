@@ -10,6 +10,7 @@ import {
 import { formatDateRange } from "../../lib/format";
 import type { MeetingSortBy } from "../../hooks/useMeetings";
 import { Dropdown } from "../common/Dropdown";
+import { MeetingCardSkeleton } from "../common/LoadingSkeleton";
 
 type MeetingListPanelProps = {
   isLoading: boolean;
@@ -55,6 +56,7 @@ export function MeetingListPanel({
       <div className="section-title section-title--compact">
         <div>
           <h2>会议队列</h2>
+          <p>{isLoading ? "加载中..." : `${meetings.length} 场会议`}</p>
         </div>
       </div>
 
@@ -140,8 +142,19 @@ export function MeetingListPanel({
       </details>
 
       <div className="meeting-list scroll-area">
-        {isLoading && <div className="empty-state">正在加载会议数据...</div>}
-        {!isLoading && meetings.length === 0 && <div className="empty-state">当前筛选条件下暂无会议</div>}
+        {isLoading && (
+          <>
+            <MeetingCardSkeleton />
+            <MeetingCardSkeleton />
+            <MeetingCardSkeleton />
+          </>
+        )}
+        {!isLoading && meetings.length === 0 && (
+          <div className="empty-state empty-state--panel">
+            <strong>暂无会议</strong>
+            <p>调整筛选条件，或新建一场会议开始编排流程。</p>
+          </div>
+        )}
         {!isLoading &&
           meetings.map((meeting) => (
             <button
@@ -154,12 +167,13 @@ export function MeetingListPanel({
                 <span className={`status-badge status-badge--${meeting.status}`}>
                   {meetingStatusLabels[meeting.status]}
                 </span>
+                <span className="meeting-card__type">{meetingTypeLabels[meeting.type]}</span>
                 <span className={`priority-badge priority-badge--${meeting.priority}`}>
                   {meetingPriorityLabels[meeting.priority]}
                 </span>
               </div>
-              <strong>{meeting.title}</strong>
-              <p>{meeting.description}</p>
+              <strong className="meeting-card__title">{meeting.title}</strong>
+              <p className="meeting-card__summary">{meeting.description}</p>
               <div className="meeting-card__meta">
                 <span>{formatDateRange(meeting.startAt, meeting.endAt)}</span>
                 <span>

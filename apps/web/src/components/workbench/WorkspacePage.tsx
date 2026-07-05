@@ -1,6 +1,6 @@
 import { meetingStatusLabels } from "@meeting-flow/shared";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
-import { StatusBanner } from "../common/StatusBanner";
+import { StatusBannerGroup } from "../common/StatusBannerGroup";
 import { MeetingListPanel } from "../meetings/MeetingListPanel";
 import { WorkflowTemplatePanel } from "../workflow/WorkflowTemplatePanel";
 
@@ -32,9 +32,11 @@ export function WorkspacePage() {
           <p>{currentMeetingText}</p>
         </div>
         <div className="workspace-quick-stats" aria-label="工作台概览">
-          <span>{meetings.filteredMeetings.length} 场筛选结果</span>
-          <span>{derived.todayMeetingCount} 场今日会议</span>
-          <span>{blockedRunCount} 个阻塞流程</span>
+          <span className="workspace-stat-chip">{meetings.filteredMeetings.length} 场筛选结果</span>
+          <span className="workspace-stat-chip">{derived.todayMeetingCount} 场今日会议</span>
+          <span className={`workspace-stat-chip${blockedRunCount > 0 ? " workspace-stat-chip--alert" : ""}`}>
+            {blockedRunCount} 个阻塞流程
+          </span>
         </div>
         <button className="primary-button" onClick={modals.openCreate} type="button">
           新建会议
@@ -42,9 +44,16 @@ export function WorkspacePage() {
       </section>
 
       <section className="workbench-console workbench-console--simple" id="workflow-console">
-        <StatusBanner error={meetings.error} feedback={meetings.feedback} />
-        <StatusBanner error={googleCalendar.error} feedback={googleCalendar.feedback} />
-        <StatusBanner error={feishuCalendar.error} feedback={feishuCalendar.feedback} />
+        <StatusBannerGroup
+          items={[
+            { id: "meetings", error: meetings.error, feedback: meetings.feedback },
+            { id: "google-calendar", error: googleCalendar.error, feedback: googleCalendar.feedback },
+            { id: "feishu-calendar", error: feishuCalendar.error, feedback: feishuCalendar.feedback },
+            { id: "workflow", error: workflow.error, feedback: workflow.feedback },
+            { id: "memory", error: memories.error, feedback: "" },
+            { id: "agent", error: agent.error, feedback: "" }
+          ]}
+        />
 
         <div className="workbench-grid workbench-grid--simplified" id="meetings">
           <MeetingListPanel
@@ -68,50 +77,7 @@ export function WorkspacePage() {
           />
 
           {meetings.selectedMeeting ? (
-            <WorkflowTemplatePanel
-              agentError={agent.error}
-              agentRun={agent.agentRun}
-              calendarStatusMessage={googleCalendar.statusMessage}
-              feishuCalendarStatusMessage={feishuCalendar.statusMessage}
-              feishuRedirectUri={feishuCalendar.redirectUri}
-              googleRedirectUri={googleCalendar.redirectUri}
-              isAgentRunning={agent.isRunning}
-              isCalendarLoading={googleCalendar.isLoading}
-              isCalendarMutating={googleCalendar.isMutating}
-              isFeishuCalendarConnected={feishuCalendar.isConnected}
-              isFeishuCalendarConfigured={feishuCalendar.isConfigured}
-              isFeishuCalendarLoading={feishuCalendar.isLoading}
-              isFeishuCalendarMutating={feishuCalendar.isMutating}
-              isGoogleCalendarConnected={googleCalendar.isConnected}
-              isGoogleCalendarConfigured={googleCalendar.isConfigured}
-              isMemoryLoading={memories.isLoading}
-              isMemoryMutating={memories.isMutating}
-              isMutating={meetings.isMutating}
-              isWorkflowLoading={workflow.isLoading}
-              isWorkflowMutating={workflow.isMutating}
-              meetingMemories={memories.items}
-              memoryError={memories.error}
-              selectedMeeting={meetings.selectedMeeting}
-              workflowError={workflow.error}
-              workflowFeedback={workflow.feedback}
-              workflowRuns={workflow.runs}
-              workflowTemplates={workflow.templates}
-              onAdvanceWorkflowRun={workflow.advanceRunAndReloadMemories}
-              onCancelWorkflowRun={workflow.cancelWorkflowRun}
-              onConnectFeishuCalendar={feishuCalendar.connectFeishuCalendar}
-              onConnectGoogleCalendar={googleCalendar.connectGoogleCalendar}
-              onDeleteMemory={memories.deleteMemory}
-              onEditMeeting={() => modals.openEdit(meetings.selectedMeeting!.id)}
-              onOpenDetail={() => modals.openDetail(meetings.selectedMeeting!.id)}
-              onRetryWorkflowRun={workflow.retryRunAndReloadMemories}
-              onRunAgent={agent.runAgentAndReload}
-              onSaveTemplateCanvas={workflow.saveTemplateCanvas}
-              onStartWorkflowRun={workflow.startRunForSelectedMeeting}
-              onSyncFeishuCalendar={() => feishuCalendar.syncMeeting(meetings.selectedMeeting!.id)}
-              onSyncGoogleCalendar={() => googleCalendar.syncMeeting(meetings.selectedMeeting!.id)}
-              onUpdateMemory={memories.updateMemory}
-              onUpdateStatus={meetings.updateMeetingStatus}
-            />
+            <WorkflowTemplatePanel />
           ) : (
             <section className="workbench-empty" aria-label="入门指南">
               <div className="workbench-empty__icon" aria-hidden="true" />
