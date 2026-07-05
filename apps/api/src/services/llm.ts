@@ -1,9 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ProductWorkflowNode, MeetingRecord } from "@meeting-flow/shared";
+import type { AiApplicationPromptConfig, ProductWorkflowNode, MeetingRecord } from "@meeting-flow/shared";
 
 let client: Anthropic | null = null;
 
-function getClient(): Anthropic | null {
+function getClient(apiKeyOverride?: string): Anthropic | null {
+  if (apiKeyOverride) {
+    return new Anthropic({ apiKey: apiKeyOverride });
+  }
+
   if (client) {
     return client;
   }
@@ -17,8 +21,8 @@ function getClient(): Anthropic | null {
   return client;
 }
 
-export function isLLMAvailable() {
-  return getClient() !== null;
+export function isLLMAvailable(apiKeyOverride?: string) {
+  return getClient(apiKeyOverride) !== null;
 }
 
 const MODEL_MAP: Record<string, string> = {
@@ -56,10 +60,12 @@ export type LLMCallResult = {
 export async function callLLM(params: {
   model: string;
   prompt: string;
+  systemPrompt?: string;
   temperature?: string | number;
   maxTokens?: number;
+  apiKey?: string;
 }): Promise<LLMCallResult> {
-  const anthropic = getClient();
+  const anthropic = getClient(params.apiKey);
   if (!anthropic) {
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
@@ -72,6 +78,7 @@ export async function callLLM(params: {
     model,
     max_tokens: maxTokens,
     temperature,
+    ...(params.systemPrompt?.trim() ? { system: params.systemPrompt } : {}),
     messages: [{ role: "user", content: params.prompt }]
   });
 
@@ -134,5 +141,63 @@ export function buildMeetingContext(meeting: MeetingRecord) {
     goal: meeting.meetingGoal,
     attendees: meeting.participants.map((p) => p.name),
     agendaItems: meeting.agendaItems.map((a) => a.title)
+  };
+}
+
+function stringifyPromptValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+function getPathValue(source: Record<string, unknown>, path: string) {
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+
+    return (current as Record<string, unknown>)[segment];
+  }, source);
+}
+
+export function buildNodeAgentPrompt(
+  config: AiApplicationPromptConfig,
+  node: ProductWorkflowNode,
+  meeting: MeetingRecord,
+  inputPayload: Record<string, unknown>
+) {
+  const context = {
+    input: inputPayload,
+    inputs: inputPayload,
+    meeting: {
+      attendeeCount: meeting.attendeeCount,
+      meetingGoal: meeting.meetingGoal,
+      meetingId: meeting.id,
+      participants: meeting.participants.map((participant) => participant.name),
+      priority: meeting.priority,
+      title: meeting.title,
+      type: meeting.type
+    },
+    node: {
+      id: node.id,
+      kind: node.kind,
+      title: node.title
+    }
+  };
+  const render = (template: string) =>
+    template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, path: string) => {
+      const value = getPathValue(context, path) ?? inputPayload[path];
+      return stringifyPromptValue(value);
+    });
+
+  return {
+    systemPrompt: render(config.systemPrompt),
+    userPrompt: render(config.userPrompt)
   };
 }
