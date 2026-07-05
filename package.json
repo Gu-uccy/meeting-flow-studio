@@ -9,6 +9,6 @@
     "dev:api": "pnpm --filter @meeting-flow/api dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm typecheck && pnpm --filter @meeting-flow/shared test && pnpm --filter @meeting-flow/api test"
+    "test": "pnpm typecheck && pnpm --filter @meeting-flow/shared test && pnpm --filter @meeting-flow/api test && pnpm --filter @meeting-flow/web test"
   }
 }
