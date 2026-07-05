@@ -12,3 +12,4 @@ coverage
 *.log
 apps/api/data/*.db
 apps/api/data/*.db-*
+output/
