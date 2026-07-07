@@ -13,6 +13,7 @@ coverage
 apps/api/data/*.db
 apps/api/data/*.db-*
 apps/api/src/data/
+apps/api/.tmp/
 __pycache__/
 apps/web/scripts/__pycache__/
 apps/web/scripts/*.py

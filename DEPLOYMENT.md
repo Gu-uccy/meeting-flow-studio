@@ -80,6 +80,30 @@ Content-Type: application/json
 
 返回 `202`，工作流在后台异步执行；可通过 WebSocket 或 `GET /api/workflows/runs/:id` 查询状态。
 
+## PostgreSQL 本地验证
+
+推荐使用 Docker 启动一次性测试库并跑集成测试：
+
+```bash
+pnpm install
+pnpm verify:postgres
+```
+
+该命令会：
+
+1. 优先使用 `docker compose -f docker-compose.postgres.yml up -d --wait` 启动 PostgreSQL 16（端口 `5433`）
+2. 若本机未安装 Docker，则自动回退到 `embedded-postgres` 临时实例
+3. 执行 `apps/api/src/__tests__/postgresIntegration.test.ts` 验证迁移、用户、文档、向量索引与计划任务
+
+手动启动容器：
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d --wait
+DB_DRIVER=postgres DATABASE_URL=postgresql://meeting_flow:meeting_flow@127.0.0.1:5433/meeting_flow \
+  RUN_POSTGRES_TESTS=true pnpm --filter @meeting-flow/api test:postgres
+docker compose -f docker-compose.postgres.yml down -v
+```
+
 ## 安全清单
 
 - [ ] 已设置强随机 `JWT_SECRET`

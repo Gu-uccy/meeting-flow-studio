@@ -219,9 +219,19 @@ export function orderByTimestampColumn(column: string, driver: DbDriver) {
   return driver === "postgres" ? `${column} DESC` : `datetime(${column}) DESC`;
 }
 
+function splitSqlStatements(schema: string) {
+  return schema
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
 export async function runMigrations(db: DbClient) {
   const schema = db.driver === "postgres" ? POSTGRES_SCHEMA : SQLITE_SCHEMA;
-  await db.exec(schema);
+
+  for (const statement of splitSqlStatements(schema)) {
+    await db.exec(statement);
+  }
 
   if (db.driver === "sqlite") {
     const columns = await db.prepare("PRAGMA table_info(workflow_schedules)").all<{ name: string }>();

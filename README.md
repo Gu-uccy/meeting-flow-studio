@@ -165,7 +165,8 @@ pnpm dev          # 同时启动 api 和 web
 pnpm dev:api      # 只启动后端
 pnpm dev:web      # 只启动前端
 pnpm typecheck    # 全仓库类型检查
-pnpm test         # 类型检查 + shared 测试
+pnpm test         # 类型检查 + 单元测试
+pnpm verify:postgres  # PostgreSQL 集成验证（Docker 或 embedded 回退）
 pnpm build        # 全仓库构建
 ```
 
@@ -283,4 +284,4 @@ Meeting Flow Studio｜会议流程编排工作台
 - 分布式 Job 队列（Redis/Bull）与多实例水平扩展。
 - 插件化 Tool 注册与更完整的节点能力运行时。
 - 向量索引增量更新与 Postgres 集成测试纳入 CI。
-- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 了解当前单实例部署方式与已知限制。
+- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 了解部署方式、`pnpm verify:postgres` 与已知限制。

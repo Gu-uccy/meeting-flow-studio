@@ -2,6 +2,10 @@ import pg from "pg";
 import type { DatabaseConfig } from "./config.js";
 import { convertPlaceholders, type DbClient, type DbRunResult, type DbStatement } from "./client.js";
 
+// Keep timestamp columns as ISO strings to match SQLite behavior.
+pg.types.setTypeParser(1114, (value) => value);
+pg.types.setTypeParser(1184, (value) => value);
+
 function createPostgresStatement(client: pg.Client, sql: string): DbStatement {
   const pgSql = convertPlaceholders(sql);
 
