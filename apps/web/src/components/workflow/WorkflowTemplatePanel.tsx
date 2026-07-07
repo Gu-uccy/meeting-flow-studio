@@ -8,7 +8,7 @@ import { WorkflowSupportPanel } from "./WorkflowSupportPanel";
 import { getNextMeetingStatus } from "./workflowPanelUtils";
 
 export function WorkflowTemplatePanel() {
-  const { agent, feishuCalendar, googleCalendar, meetings, memories, modals, openNodeAgent, workflow } = useWorkbench();
+  const { agent, feishuCalendar, googleCalendar, meetings, memories, modals, openNodeAgent, workflow, canvasFocusRun, clearCanvasFocusRun } = useWorkbench();
 
   const selectedMeeting = meetings.selectedMeeting;
   const isMutating = meetings.isMutating;
@@ -42,6 +42,8 @@ export function WorkflowTemplatePanel() {
     selectedMeeting,
     workflowTemplates,
     workflowRuns,
+    canvasFocusRun,
+    onCanvasFocusApplied: clearCanvasFocusRun,
     onSaveTemplateCanvas: workflow.saveTemplateCanvas,
     onStartWorkflowRun: workflow.startRunForSelectedMeeting,
     onAdvanceWorkflowRun: workflow.advanceRunAndReloadMemories,
@@ -112,6 +114,7 @@ export function WorkflowTemplatePanel() {
         <WorkflowCanvasPane
           actionCount={actionCount}
           availableRuns={canvas.availableRuns}
+          filteredRuns={canvas.filteredRuns}
           blockedNodeRun={canvas.blockedNodeRun}
           canvasNodes={canvas.canvasNodes}
           canvasWrapperRef={canvas.reactFlowWrapper}
@@ -123,6 +126,24 @@ export function WorkflowTemplatePanel() {
           isWorkflowMoreOpen={canvas.isWorkflowMoreOpen}
           isWorkflowActionBusy={isWorkflowActionBusy}
           onAddNode={canvas.handleAddNode}
+          onCreateTemplate={() => void workflow.createWorkflowTemplate()}
+          onDeleteTemplate={() => {
+            const remaining = workflow.templates.filter((item) => item.id !== canvas.selectedTemplateId);
+            void workflow.deleteWorkflowTemplate(canvas.selectedTemplateId).then((ok) => {
+              if (ok && remaining[0]) {
+                canvas.selectTemplate(remaining[0].id);
+              }
+            });
+          }}
+          onDuplicateTemplate={() => void workflow.duplicateWorkflowTemplate(canvas.selectedTemplateId).then((template) => {
+            if (template) canvas.selectTemplate(template.id);
+          })}
+          onExportTemplate={() => void workflow.exportWorkflowTemplate(canvas.selectedTemplateId)}
+          onImportTemplate={(template) => void workflow.importWorkflowTemplate(template).then((imported) => {
+            if (imported) canvas.selectTemplate(imported.id);
+          })}
+          onApplyTemplateVersion={(versionId) => void workflow.applyWorkflowTemplateVersion(canvas.selectedTemplateId, versionId)}
+          onCreateTemplateVersion={(status, summary) => void workflow.createWorkflowTemplateVersion(canvas.selectedTemplateId, status, summary)}
           onAdvanceWorkflowRun={() => void canvas.handleAdvanceWorkflowRun()}
           onConnect={canvas.handleConnect}
           onDeleteSelectedNode={canvas.handleDeleteSelectedNode}
@@ -138,6 +159,8 @@ export function WorkflowTemplatePanel() {
           onSaveCanvas={() => void canvas.handleSaveCanvas()}
           onSelectRun={canvas.selectRun}
           onSelectTemplate={canvas.selectTemplate}
+          runStatusFilter={canvas.runStatusFilter}
+          setRunStatusFilter={canvas.setRunStatusFilter}
           onSetCanvasEditMode={canvas.setIsCanvasEditMode}
           onSetCanvasZoomFocused={canvas.setIsCanvasZoomFocused}
           onSetWorkflowDetailOpen={canvas.setIsWorkflowDetailOpen}

@@ -24,6 +24,14 @@ export const runStatusLabels: Record<ProductWorkflowRunStatus, string> = {
   failed: "失败"
 };
 
+export const runStatusFilterOptions: Array<{ value: "all" | ProductWorkflowRunStatus; label: string }> = [
+  { value: "all", label: "全部" },
+  { value: "running", label: runStatusLabels.running },
+  { value: "blocked", label: runStatusLabels.blocked },
+  { value: "completed", label: runStatusLabels.completed },
+  { value: "failed", label: runStatusLabels.failed }
+];
+
 export const nodeRunStateMap: Record<ProductNodeRunStatus, WorkflowNodeData["state"]> = {
   pending: "waiting",
   running: "running",

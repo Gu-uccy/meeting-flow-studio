@@ -13,6 +13,7 @@ export function WorkspacePage() {
     meetings,
     memories,
     modals,
+    openRunsConsole,
     workflow
   } = useWorkbench();
 
@@ -34,7 +35,15 @@ export function WorkspacePage() {
         <div className="workbench-commandbar__meta" aria-label="工作台概览">
           <span>{meetings.filteredMeetings.length} 场会议</span>
           <span>{derived.todayMeetingCount} 场今日</span>
-          {blockedRunCount > 0 && <span className="workbench-commandbar__alert">{blockedRunCount} 个阻塞</span>}
+          {blockedRunCount > 0 && (
+            <button
+              className="workbench-commandbar__alert"
+              onClick={() => openRunsConsole({ status: "blocked" })}
+              type="button"
+            >
+              {blockedRunCount} 个阻塞
+            </button>
+          )}
         </div>
         <button className="primary-button" onClick={modals.openCreate} type="button">
           新建会议

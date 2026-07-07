@@ -14,12 +14,14 @@ import ReactFlow, {
   type NodeChange,
   type ReactFlowInstance
 } from "reactflow";
-import { meetingStatusLabels, type MeetingRecord, type ProductNodeRun, type ProductWorkflowNode, type ProductWorkflowRun, type ProductWorkflowTemplate } from "@meeting-flow/shared";
+import { meetingStatusLabels, type MeetingRecord, type ProductNodeRun, type ProductWorkflowNode, type ProductWorkflowRun, type ProductWorkflowRunStatus, type ProductWorkflowTemplate } from "@meeting-flow/shared";
 import { durationLabel, formatDateRange } from "../../lib/format";
 import { FlowNode } from "./FlowNode";
 import { WorkflowCanvasEditorToolbar } from "./WorkflowCanvasInspector";
+import { WorkflowTemplateVersionPanel } from "./WorkflowTemplateVersionPanel";
 import {
   nodeRunLabels,
+  runStatusFilterOptions,
   runStatusLabels,
   statusClass,
   toneByKind
@@ -31,6 +33,7 @@ const nodeTypes = { workflow: FlowNode };
 type WorkflowCanvasPaneProps = {
   actionCount: number;
   availableRuns: ProductWorkflowRun[];
+  filteredRuns: ProductWorkflowRun[];
   blockedNodeRun?: ProductNodeRun;
   canvasNodes: ProductWorkflowNode[];
   canvasWrapperRef?: RefObject<HTMLDivElement>;
@@ -40,6 +43,13 @@ type WorkflowCanvasPaneProps = {
   isWorkflowActionBusy: boolean;
   isWorkflowDetailOpen: boolean;
   isWorkflowMoreOpen: boolean;
+  onCreateTemplate?: () => void;
+  onDeleteTemplate?: () => void;
+  onDuplicateTemplate?: () => void;
+  onExportTemplate?: () => void;
+  onImportTemplate?: (template: ProductWorkflowTemplate) => void;
+  onApplyTemplateVersion?: (versionId: string) => void;
+  onCreateTemplateVersion?: (status: "snapshot" | "published", summary?: string) => void;
   onAddNode: () => void;
   onAdvanceWorkflowRun: () => void;
   onConnect?: (connection: Connection) => void;
@@ -56,6 +66,8 @@ type WorkflowCanvasPaneProps = {
   onSaveCanvas: () => void;
   onSelectRun: (run: ProductWorkflowRun) => void;
   onSelectTemplate: (templateId: string) => void;
+  runStatusFilter: "all" | ProductWorkflowRunStatus;
+  setRunStatusFilter: (value: "all" | ProductWorkflowRunStatus) => void;
   onSetCanvasEditMode: (value: boolean) => void;
   onSetCanvasZoomFocused: (value: boolean) => void;
   onSetWorkflowDetailOpen: (value: boolean | ((current: boolean) => boolean)) => void;
@@ -143,6 +155,7 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
   const {
     actionCount,
     availableRuns,
+    filteredRuns,
     blockedNodeRun,
     canvasNodes,
     canvasWrapperRef,
@@ -152,6 +165,13 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
     isWorkflowActionBusy,
     isWorkflowDetailOpen,
     isWorkflowMoreOpen,
+    onCreateTemplate,
+    onDeleteTemplate,
+    onDuplicateTemplate,
+    onExportTemplate,
+    onImportTemplate,
+    onApplyTemplateVersion,
+    onCreateTemplateVersion,
     onAddNode,
     onAdvanceWorkflowRun,
     onConnect,
@@ -168,6 +188,8 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
     onSaveCanvas,
     onSelectRun,
     onSelectTemplate,
+    runStatusFilter,
+    setRunStatusFilter,
     onSetCanvasZoomFocused,
     onStartWorkflowRun,
     selectedMeeting,
@@ -196,7 +218,12 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
           isCanvasDirty={isCanvasDirty}
           isWorkflowActionBusy={isWorkflowActionBusy}
           onAddNode={onAddNode}
+          onCreateTemplate={() => onCreateTemplate?.()}
           onDeleteSelectedNode={onDeleteSelectedNode}
+          onDeleteTemplate={() => onDeleteTemplate?.()}
+          onDuplicateTemplate={() => onDuplicateTemplate?.()}
+          onExportTemplate={() => onExportTemplate?.()}
+          onImportTemplate={(template) => onImportTemplate?.(template)}
           onResetCanvas={onResetCanvas}
           onSaveCanvas={onSaveCanvas}
           onSelectTemplate={onSelectTemplate}
@@ -315,11 +342,34 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
         </ReactFlow>
       </div>
 
+      {isCanvasEditMode && (
+        <WorkflowTemplateVersionPanel
+          isCanvasDirty={isCanvasDirty}
+          isWorkflowActionBusy={isWorkflowActionBusy}
+          onApplyVersion={(versionId) => onApplyTemplateVersion?.(versionId)}
+          onCreateVersion={(status, summary) => onCreateTemplateVersion?.(status, summary)}
+          onSaveCanvas={() => void onSaveCanvas()}
+          selectedTemplate={selectedTemplate}
+        />
+      )}
+
       {!isCanvasEditMode && (
       <div className="runs-panel" aria-label="运行记录">
         <div className="runs-panel__list">
-          {availableRuns.length > 0 ? (
-            availableRuns.map((run) => (
+          <div className="runs-panel__filters" aria-label="运行状态筛选">
+            {runStatusFilterOptions.map((option) => (
+              <button
+                className={`filter-chip${runStatusFilter === option.value ? " is-active" : ""}`}
+                key={option.value}
+                onClick={() => setRunStatusFilter(option.value)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {filteredRuns.length > 0 ? (
+            filteredRuns.map((run) => (
               <button
                 className={`run-row ${run.id === selectedRun?.id ? "is-active" : ""}`}
                 key={run.id}
@@ -332,7 +382,7 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
               </button>
             ))
           ) : (
-            <div className="run-empty">暂无运行记录</div>
+            <div className="run-empty">{availableRuns.length > 0 ? "当前筛选无匹配运行" : "暂无运行记录"}</div>
           )}
         </div>
 

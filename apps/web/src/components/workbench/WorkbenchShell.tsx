@@ -7,6 +7,7 @@ import { MeetingCreateForm } from "../meetings/MeetingCreateForm";
 import { MeetingDetailPanel } from "../meetings/MeetingDetailPanel";
 import { AccountPage } from "./AccountPage";
 import { NodeAgentPage } from "./NodeAgentPage";
+import { RunsConsolePage } from "./RunsConsolePage";
 import { WorkspacePage } from "./WorkspacePage";
 
 type WorkbenchShellProps = {
@@ -15,7 +16,7 @@ type WorkbenchShellProps = {
 
 export function WorkbenchShell({ onLogout }: WorkbenchShellProps) {
   const { user } = useAuth();
-  const { workbenchView, setWorkbenchView, meetings, modals } = useWorkbench();
+  const { workbenchView, setWorkbenchView, meetings, modals, openRunsConsole } = useWorkbench();
 
   if (!user) {
     return null;
@@ -38,6 +39,13 @@ export function WorkbenchShell({ onLogout }: WorkbenchShellProps) {
             type="button"
           >
             会议流程管理
+          </button>
+          <button
+            className={`nav-view-switch__button ${workbenchView === "runs" ? "is-active" : ""}`}
+            onClick={() => openRunsConsole()}
+            type="button"
+          >
+            运行控制台
           </button>
           <button
             className={`nav-view-switch__button ${workbenchView === "apps" ? "is-active" : ""}`}
@@ -63,12 +71,21 @@ export function WorkbenchShell({ onLogout }: WorkbenchShellProps) {
       </header>
 
       <main
-        className={`workbench-main ${workbenchView === "account" ? "workbench-main--account" : workbenchView === "apps" ? "workbench-main--apps" : ""}`}
+        className={`workbench-main ${
+          workbenchView === "account"
+            ? "workbench-main--account"
+            : workbenchView === "apps"
+              ? "workbench-main--apps"
+              : workbenchView === "runs"
+                ? "workbench-main--runs"
+                : ""
+        }`}
         id="workbench"
       >
         {workbenchView === "account" && <AccountPage />}
         {workbenchView === "workspace" && <WorkspacePage />}
         {workbenchView === "apps" && <NodeAgentPage />}
+        {workbenchView === "runs" && <RunsConsolePage />}
       </main>
 
       {modals.isCreateOpen && (

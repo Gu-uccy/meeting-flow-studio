@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { MeetingAgentRun, MeetingRecord, ProductWorkflowTemplate, MeetingAgentAction } from "@meeting-flow/shared";
+import { miniDifyNodeCapabilityCatalog, type MeetingAgentRun, type MeetingRecord, type ProductWorkflowTemplate, type MeetingAgentAction } from "@meeting-flow/shared";
 import { useWorkflowSchedules } from "../../hooks/useWorkflowSchedules";
 import { agentActionPriorityLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowExtensionTabs, type WorkflowExtensionTab } from "./WorkflowSideTabs";
@@ -277,6 +277,30 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
                 );
               })
             )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === "capabilities" && (
+        <div className="workflow-side-panel" role="tabpanel">
+          <div className="workflow-side-panel__hero">
+            <span className="section-kicker">拓展工具</span>
+            <strong>能力模型</strong>
+            <p>与 Dify 节点能力对齐的产品矩阵。</p>
+          </div>
+
+          <section className="workflow-side-panel__section node-capability-catalog" aria-label="节点能力矩阵">
+            {miniDifyNodeCapabilityCatalog.map((capability) => (
+              <article className={`node-capability-card node-capability--${capability.maturity}`} key={capability.kind}>
+                <div className="node-capability-card__head">
+                  <strong>{capability.name}</strong>
+                  <span>{capability.difyLikeName}</span>
+                </div>
+                <p>{capability.purpose}</p>
+                <small>配置：{capability.requiredConfig.join(" · ")}</small>
+                <small>输出：{capability.runtimeOutput.join(" · ")}</small>
+              </article>
+            ))}
           </section>
         </div>
       )}

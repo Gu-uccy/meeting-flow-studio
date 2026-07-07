@@ -10,6 +10,7 @@ import {
 } from "@meeting-flow/shared";
 import { useKnowledgeSearch } from "../../hooks/useKnowledgeSearch";
 import { useKnowledgeIndex } from "../../hooks/useKnowledgeIndex";
+import { useKnowledgeDocuments } from "../../hooks/useKnowledgeDocuments";
 import { RunLatencyWaterfall } from "./RunLatencyWaterfall";
 import { nodeRunLabels, runStatusLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowDetailTabs, type WorkflowDetailTab } from "./WorkflowSideTabs";
@@ -85,6 +86,9 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
   const [activeTab, setActiveTab] = useState<WorkflowDetailTab>("run");
   const knowledgeSearch = useKnowledgeSearch(selectedMeeting?.id ?? "", Boolean(selectedMeeting));
   const knowledgeIndex = useKnowledgeIndex(activeTab === "memory");
+  const knowledgeDocuments = useKnowledgeDocuments(selectedMeeting?.id ?? "", activeTab === "memory" && Boolean(selectedMeeting));
+  const [documentTitle, setDocumentTitle] = useState("");
+  const [documentContent, setDocumentContent] = useState("");
 
   const runSummary = selectedRun
     ? `${runStatusLabels[selectedRun.status]} · ${selectedRun.durationSeconds}s${selectedRun.usage?.totalTokens ? ` · ${selectedRun.usage.totalTokens} tokens` : ""}`
@@ -293,6 +297,66 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
               </button>
               {knowledgeIndex.error ? <p className="memory-empty">{knowledgeIndex.error}</p> : null}
               {knowledgeIndex.feedback ? <p className="workflow-side-panel__feedback">{knowledgeIndex.feedback}</p> : null}
+            </div>
+
+            <div className="knowledge-documents-panel" aria-label="知识文档">
+              <div className="ide-section-title">
+                <strong>知识文档</strong>
+                <span>{knowledgeDocuments.isLoading ? "同步中" : `${knowledgeDocuments.items.length} 篇`}</span>
+              </div>
+              <label>
+                <span>文档标题</span>
+                <input
+                  onChange={(event) => setDocumentTitle(event.target.value)}
+                  placeholder="例如：客户背景资料"
+                  value={documentTitle}
+                />
+              </label>
+              <label>
+                <span>文档内容</span>
+                <textarea
+                  onChange={(event) => setDocumentContent(event.target.value)}
+                  placeholder="粘贴 Markdown 或纯文本，上传后会自动分片并进入向量索引"
+                  rows={4}
+                  value={documentContent}
+                />
+              </label>
+              <button
+                className="ghost-button"
+                disabled={isWorkflowActionBusy || knowledgeDocuments.isMutating || !documentContent.trim()}
+                onClick={() => void knowledgeDocuments.uploadDocument(documentTitle, documentContent, "markdown").then((doc) => {
+                  if (doc) {
+                    setDocumentTitle("");
+                    setDocumentContent("");
+                    void knowledgeIndex.rebuildIndex();
+                  }
+                })}
+                type="button"
+              >
+                {knowledgeDocuments.isMutating ? "上传中..." : "上传文档"}
+              </button>
+              {knowledgeDocuments.error ? <p className="memory-empty">{knowledgeDocuments.error}</p> : null}
+              {knowledgeDocuments.feedback ? <p className="workflow-side-panel__feedback">{knowledgeDocuments.feedback}</p> : null}
+              {knowledgeDocuments.items.slice(0, 4).map((document) => (
+                <article className="memory-row memory-row--vector" key={document.id}>
+                  <div className="memory-row__body">
+                    <span>{document.title}</span>
+                    <small>{document.format} · {document.content.slice(0, 80)}{document.content.length > 80 ? "..." : ""}</small>
+                  </div>
+                  <div className="memory-row__actions">
+                    <button
+                      className="memory-action-button memory-action-button--danger"
+                      disabled={isWorkflowActionBusy || knowledgeDocuments.isMutating}
+                      onClick={() => void knowledgeDocuments.deleteDocument(document.id).then((ok) => {
+                        if (ok) void knowledgeIndex.rebuildIndex();
+                      })}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </article>
+              ))}
             </div>
 
             <div className="knowledge-vector-search" aria-label="向量检索">

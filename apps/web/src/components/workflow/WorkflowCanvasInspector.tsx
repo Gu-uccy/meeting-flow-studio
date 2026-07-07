@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import {
   meetingNodeKindLabels,
   meetingNodeKinds,
   type ProductWorkflowEdge,
-  type ProductWorkflowNode
+  type ProductWorkflowNode,
+  type ProductWorkflowTemplate
 } from "@meeting-flow/shared";
 import { Dropdown } from "../common/Dropdown";
 import {
@@ -222,7 +224,12 @@ export function WorkflowCanvasEditorToolbar({
   isCanvasDirty,
   isWorkflowActionBusy,
   onAddNode,
+  onCreateTemplate,
   onDeleteSelectedNode,
+  onDeleteTemplate,
+  onDuplicateTemplate,
+  onExportTemplate,
+  onImportTemplate,
   onResetCanvas,
   onSaveCanvas,
   onSelectTemplate,
@@ -234,7 +241,12 @@ export function WorkflowCanvasEditorToolbar({
   isCanvasDirty: boolean;
   isWorkflowActionBusy: boolean;
   onAddNode: () => void;
+  onCreateTemplate: () => void;
   onDeleteSelectedNode: () => void;
+  onDeleteTemplate: () => void;
+  onDuplicateTemplate: () => void;
+  onExportTemplate: () => void;
+  onImportTemplate: (template: ProductWorkflowTemplate) => void;
   onResetCanvas: () => void;
   onSaveCanvas: () => void;
   onSelectTemplate: (templateId: string) => void;
@@ -242,6 +254,8 @@ export function WorkflowCanvasEditorToolbar({
   selectedTemplateId: string;
   workflowTemplates: Array<{ id: string; name: string }>;
 }) {
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="workflow-template-row">
       <div className="workflow-template-row__main">
@@ -256,6 +270,48 @@ export function WorkflowCanvasEditorToolbar({
               {template.name}
             </button>
           ))}
+        </div>
+        <div className="template-switcher__actions" aria-label="模板管理">
+          <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onCreateTemplate} type="button">新建</button>
+          <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onDuplicateTemplate} type="button">复制</button>
+          <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onExportTemplate} type="button">导出</button>
+          <button
+            className="ghost-button"
+            disabled={isWorkflowActionBusy}
+            onClick={() => importInputRef.current?.click()}
+            type="button"
+          >
+            导入
+          </button>
+          <button
+            className="ghost-button"
+            disabled={isWorkflowActionBusy || workflowTemplates.length <= 1}
+            onClick={onDeleteTemplate}
+            type="button"
+          >
+            删除
+          </button>
+          <input
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) {
+                return;
+              }
+
+              void file.text().then((text) => {
+                const parsed = JSON.parse(text) as ProductWorkflowTemplate;
+                onImportTemplate(parsed);
+              }).catch(() => {
+                // Parent hook surfaces errors.
+              }).finally(() => {
+                event.target.value = "";
+              });
+            }}
+            ref={importInputRef}
+            type="file"
+          />
         </div>
         <div className="node-palette node-palette--toolbar" aria-label="节点面板">
           <span>拖入画布</span>

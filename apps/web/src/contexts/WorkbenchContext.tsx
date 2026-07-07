@@ -16,8 +16,17 @@ import { useMeetingAgent } from "../hooks/useMeetingAgent";
 import { useMeetingMemories } from "../hooks/useMeetingMemories";
 import { useWorkflowLibrary } from "../hooks/useWorkflowLibrary";
 import type { MeetingAgentRun, MeetingAgentAction, ProductWorkflowRun } from "@meeting-flow/shared";
+import type { RunsConsoleFilters } from "../lib/runsConsoleUtils";
 
-export type WorkbenchView = "workspace" | "apps" | "account";
+export type WorkbenchView = "workspace" | "apps" | "account" | "runs";
+
+export type RunsConsolePreset = Partial<Pick<RunsConsoleFilters, "status" | "templateId" | "meetingId" | "search">>;
+
+export type CanvasFocusRun = {
+  runId: string;
+  templateId: string;
+  meetingId: string;
+};
 
 function isToday(value: string) {
   const date = new Date(value);
@@ -32,6 +41,12 @@ function isToday(value: string) {
 type WorkbenchContextValue = {
   workbenchView: WorkbenchView;
   setWorkbenchView: (view: WorkbenchView) => void;
+  runsConsolePreset: RunsConsolePreset | null;
+  openRunsConsole: (preset?: RunsConsolePreset) => void;
+  clearRunsConsolePreset: () => void;
+  canvasFocusRun: CanvasFocusRun | null;
+  focusRunInCanvas: (run: ProductWorkflowRun) => void;
+  clearCanvasFocusRun: () => void;
   pendingNodeAgentKey: string | null;
   openNodeAgent: (templateId: string, nodeId: string) => void;
   clearPendingNodeAgent: () => void;
@@ -81,6 +96,8 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
 
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("workspace");
   const [pendingNodeAgentKey, setPendingNodeAgentKey] = useState<string | null>(null);
+  const [runsConsolePreset, setRunsConsolePreset] = useState<RunsConsolePreset | null>(null);
+  const [canvasFocusRun, setCanvasFocusRun] = useState<CanvasFocusRun | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
@@ -235,6 +252,29 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     setPendingNodeAgentKey(null);
   }, []);
 
+  const openRunsConsole = useCallback((preset?: RunsConsolePreset) => {
+    setRunsConsolePreset(preset ?? null);
+    setWorkbenchView("runs");
+  }, []);
+
+  const clearRunsConsolePreset = useCallback(() => {
+    setRunsConsolePreset(null);
+  }, []);
+
+  const focusRunInCanvas = useCallback((run: ProductWorkflowRun) => {
+    meetings.setSelectedMeetingId(run.meetingId);
+    setCanvasFocusRun({
+      runId: run.id,
+      templateId: run.templateId,
+      meetingId: run.meetingId
+    });
+    setWorkbenchView("workspace");
+  }, [meetings.setSelectedMeetingId]);
+
+  const clearCanvasFocusRun = useCallback(() => {
+    setCanvasFocusRun(null);
+  }, []);
+
   const submitCreate = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     const success = await meetings.createMeeting(event);
     if (success) {
@@ -302,6 +342,12 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     () => ({
       workbenchView,
       setWorkbenchView,
+      runsConsolePreset,
+      openRunsConsole,
+      clearRunsConsolePreset,
+      canvasFocusRun,
+      focusRunInCanvas,
+      clearCanvasFocusRun,
       pendingNodeAgentKey,
       openNodeAgent,
       clearPendingNodeAgent,
@@ -315,7 +361,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       modals,
       derived
     }),
-    [agent, aiSettings, clearPendingNodeAgent, derived, feishuCalendar, googleCalendar, meetings, memories, modals, openNodeAgent, pendingNodeAgentKey, workflow, workbenchView]
+    [agent, aiSettings, canvasFocusRun, clearCanvasFocusRun, clearPendingNodeAgent, clearRunsConsolePreset, derived, feishuCalendar, focusRunInCanvas, googleCalendar, meetings, memories, modals, openNodeAgent, openRunsConsole, pendingNodeAgentKey, runsConsolePreset, workflow, workbenchView]
   );
 
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;

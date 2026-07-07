@@ -1,12 +1,15 @@
+import { useRef } from "react";
 import { userRoleLabels } from "@meeting-flow/shared";
 import { useAuth } from "../../contexts/AuthContext";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
 import { formatDateTime } from "../../lib/format";
 import { StatusBanner } from "../common/StatusBanner";
+import { AccountIntegrationOverview } from "./AccountIntegrationOverview";
 
 export function AccountPage() {
   const { user } = useAuth();
   const { aiSettings, setWorkbenchView } = useWorkbench();
+  const aiSettingsPanelRef = useRef<HTMLElement | null>(null);
 
   if (!user) {
     return null;
@@ -25,13 +28,19 @@ export function AccountPage() {
       <div className="account-page__header">
         <div>
           <span className="section-kicker">Account</span>
-          <h1 id="account-title">账号管理</h1>
-          <p>查看当前登录账号、权限和基础安全信息。</p>
+          <h1 id="account-title">账号与集成总览</h1>
+          <p>集中查看平台状态、外部集成连接与 Service API 密钥。</p>
         </div>
         <button className="ghost-button" onClick={() => setWorkbenchView("workspace")} type="button">
           返回工作台
         </button>
       </div>
+
+      <AccountIntegrationOverview
+        onNavigateToAiSettings={() => {
+          aiSettingsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
 
       <div className="account-page__grid">
         <article className="account-profile">
@@ -85,7 +94,7 @@ export function AccountPage() {
           </dl>
         </article>
 
-        <article className="account-panel account-panel--ai">
+        <article className="account-panel account-panel--ai" ref={aiSettingsPanelRef}>
           <h2>AI Agent 设置</h2>
           <StatusBanner error={aiSettings.error} feedback={aiSettings.feedback} />
           <dl className="account-detail-list">

@@ -14,6 +14,7 @@ import type {
   ProductWorkflowEdge,
   ProductWorkflowNode,
   ProductWorkflowRun,
+  ProductWorkflowRunStatus,
   ProductWorkflowTemplate
 } from "@meeting-flow/shared";
 import type { WorkflowNodeData } from "../components/workflow/workflowPanelTypes";
@@ -32,6 +33,12 @@ export type UseWorkflowCanvasStateOptions = {
   selectedMeeting: MeetingRecord | null;
   workflowTemplates: ProductWorkflowTemplate[];
   workflowRuns: ProductWorkflowRun[];
+  canvasFocusRun?: {
+    runId: string;
+    templateId: string;
+    meetingId: string;
+  } | null;
+  onCanvasFocusApplied?: () => void;
   onSaveTemplateCanvas: (
     templateId: string,
     nodes: ProductWorkflowNode[],
@@ -47,6 +54,8 @@ export function useWorkflowCanvasState({
   selectedMeeting,
   workflowTemplates,
   workflowRuns,
+  canvasFocusRun,
+  onCanvasFocusApplied,
   onSaveTemplateCanvas,
   onStartWorkflowRun,
   onAdvanceWorkflowRun,
@@ -66,6 +75,7 @@ export function useWorkflowCanvasState({
   const [isCanvasEditMode, setIsCanvasEditMode] = useState(false);
   const [isWorkflowDetailOpen, setIsWorkflowDetailOpen] = useState(false);
   const [isWorkflowMoreOpen, setIsWorkflowMoreOpen] = useState(false);
+  const [runStatusFilter, setRunStatusFilter] = useState<"all" | ProductWorkflowRunStatus>("all");
 
   const lastAutoMatchedMeetingId = useRef<string | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -77,6 +87,11 @@ export function useWorkflowCanvasState({
   const availableRuns = useMemo(
     () => (selectedTemplate ? workflowRuns.filter((run) => run.templateId === selectedTemplate.id) : []),
     [selectedTemplate, workflowRuns]
+  );
+
+  const filteredRuns = useMemo(
+    () => (runStatusFilter === "all" ? availableRuns : availableRuns.filter((run) => run.status === runStatusFilter)),
+    [availableRuns, runStatusFilter]
   );
 
   const selectedRun = availableRuns.find((run) => run.id === selectedRunId)
@@ -95,6 +110,23 @@ export function useWorkflowCanvasState({
   const selectedInputPayload = formatPayload(selectedNodeRun?.inputPayload);
   const selectedOutputPayload = formatPayload(selectedNodeRun?.outputPayload);
   const blockedNodeRun = selectedRun?.nodeRuns.find((run) => run.status === "blocked" || run.status === "failed");
+
+  useEffect(() => {
+    if (!canvasFocusRun || selectedMeeting?.id !== canvasFocusRun.meetingId) {
+      return;
+    }
+
+    const focusedTemplate = workflowTemplates.find((item) => item.id === canvasFocusRun.templateId);
+    if (!focusedTemplate) {
+      return;
+    }
+
+    const focusedRun = workflowRuns.find((run) => run.id === canvasFocusRun.runId) ?? null;
+    setSelectedTemplateId(canvasFocusRun.templateId);
+    setSelectedRunId(canvasFocusRun.runId);
+    setSelectedFlowNodeId(getFeaturedNodeId(focusedRun, focusedTemplate));
+    onCanvasFocusApplied?.();
+  }, [canvasFocusRun, onCanvasFocusApplied, selectedMeeting?.id, workflowRuns, workflowTemplates]);
 
   useEffect(() => {
     setCanvasNodes(selectedTemplate?.nodes.map((node) => ({ ...node })) ?? []);
@@ -374,6 +406,7 @@ export function useWorkflowCanvasState({
     blockedNodeRun,
     canvasEdges,
     canvasNodes,
+    filteredRuns,
     handleAddNode,
     handleAdvanceWorkflowRun,
     handleCancelWorkflowRun,
@@ -400,6 +433,7 @@ export function useWorkflowCanvasState({
     reactFlowInstance,
     reactFlowWrapper,
     resolutionNote,
+    runStatusFilter,
     selectRun,
     selectTemplate,
     selectedEdge,
@@ -418,6 +452,7 @@ export function useWorkflowCanvasState({
     setIsWorkflowDetailOpen,
     setIsWorkflowMoreOpen,
     setResolutionNote,
+    setRunStatusFilter,
     setSelectedFlowNodeId,
     updateCanvasEdge,
     updateCanvasNode,
