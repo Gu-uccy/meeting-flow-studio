@@ -35,3 +35,68 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    name: E2E workbench
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @meeting-flow/shared build
+
+      - name: Install Playwright browser
+        run: pnpm --filter @meeting-flow/web exec playwright install chromium
+
+      - name: Start API
+        run: pnpm --filter @meeting-flow/api dev &
+        env:
+          JWT_SECRET: ci-test-secret
+          HOST: 127.0.0.1
+          PORT: 8787
+
+      - name: Wait for API
+        run: |
+          for i in {1..30}; do
+            curl -sf http://127.0.0.1:8787/health && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Start Web
+        run: pnpm --filter @meeting-flow/web dev &
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:8787
+
+      - name: Wait for Web
+        run: |
+          for i in {1..30}; do
+            curl -sf http://127.0.0.1:5173 && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run E2E
+        run: pnpm --filter @meeting-flow/web test:e2e
+        env:
+          WEB_URL: http://127.0.0.1:5173
+          E2E_EMAIL: editor@meetingflow.local
+          E2E_PASSWORD: admin123
