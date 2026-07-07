@@ -246,7 +246,7 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
             )}
           </section>
 
-          <div className="workflow-side-panel__secondary">
+          <div className="workflow-side-panel__toolbar workflow-side-panel__toolbar--actions">
             <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onEditMeeting} type="button">
               编辑会议
             </button>
@@ -277,7 +277,7 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
           </div>
 
           <section className="meeting-memory-strip workflow-side-panel__section" aria-label="会议记忆">
-            <div className="knowledge-index-panel" aria-label="向量索引">
+            <div className="workflow-side-panel__card workflow-side-panel__card--muted knowledge-index-panel" aria-label="向量索引">
               <div className="ide-section-title">
                 <strong>向量索引</strong>
                 <span>{knowledgeIndex.isLoading ? "同步中" : `${knowledgeIndex.index?.chunkCount ?? 0} 分片`}</span>
@@ -299,12 +299,12 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
               {knowledgeIndex.feedback ? <p className="workflow-side-panel__feedback">{knowledgeIndex.feedback}</p> : null}
             </div>
 
-            <div className="knowledge-documents-panel" aria-label="知识文档">
+            <div className="workflow-side-panel__card knowledge-documents-panel" aria-label="知识文档">
               <div className="ide-section-title">
                 <strong>知识文档</strong>
                 <span>{knowledgeDocuments.isLoading ? "同步中" : `${knowledgeDocuments.items.length} 篇`}</span>
               </div>
-              <label>
+              <label className="workflow-side-panel__field">
                 <span>文档标题</span>
                 <input
                   onChange={(event) => setDocumentTitle(event.target.value)}
@@ -312,7 +312,7 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
                   value={documentTitle}
                 />
               </label>
-              <label>
+              <label className="workflow-side-panel__field">
                 <span>文档内容</span>
                 <textarea
                   onChange={(event) => setDocumentContent(event.target.value)}
@@ -321,20 +321,22 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
                   value={documentContent}
                 />
               </label>
-              <button
-                className="ghost-button"
-                disabled={isWorkflowActionBusy || knowledgeDocuments.isMutating || !documentContent.trim()}
-                onClick={() => void knowledgeDocuments.uploadDocument(documentTitle, documentContent, "markdown").then((doc) => {
-                  if (doc) {
-                    setDocumentTitle("");
-                    setDocumentContent("");
-                    void knowledgeIndex.rebuildIndex();
-                  }
-                })}
-                type="button"
-              >
-                {knowledgeDocuments.isMutating ? "上传中..." : "上传文档"}
-              </button>
+              <div className="workflow-side-panel__toolbar">
+                <button
+                  className="primary-button"
+                  disabled={isWorkflowActionBusy || knowledgeDocuments.isMutating || !documentContent.trim()}
+                  onClick={() => void knowledgeDocuments.uploadDocument(documentTitle, documentContent, "markdown").then((doc) => {
+                    if (doc) {
+                      setDocumentTitle("");
+                      setDocumentContent("");
+                      void knowledgeIndex.rebuildIndex();
+                    }
+                  })}
+                  type="button"
+                >
+                  {knowledgeDocuments.isMutating ? "上传中..." : "上传文档"}
+                </button>
+              </div>
               {knowledgeDocuments.error ? <p className="memory-empty">{knowledgeDocuments.error}</p> : null}
               {knowledgeDocuments.feedback ? <p className="workflow-side-panel__feedback">{knowledgeDocuments.feedback}</p> : null}
               {knowledgeDocuments.items.slice(0, 4).map((document) => (
@@ -359,8 +361,8 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
               ))}
             </div>
 
-            <div className="knowledge-vector-search" aria-label="向量检索">
-              <label>
+            <div className="workflow-side-panel__card workflow-side-panel__card--accent knowledge-vector-search" aria-label="向量检索">
+              <label className="workflow-side-panel__field">
                 <span>向量检索</span>
                 <div className="knowledge-vector-search__row">
                   <input

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { miniDifyNodeCapabilityCatalog, type MeetingAgentRun, type MeetingRecord, type ProductWorkflowTemplate, type MeetingAgentAction } from "@meeting-flow/shared";
+import { Dropdown } from "../common/Dropdown";
 import { useWorkflowSchedules } from "../../hooks/useWorkflowSchedules";
 import { agentActionPriorityLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowExtensionTabs, type WorkflowExtensionTab } from "./WorkflowSideTabs";
@@ -181,32 +182,33 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
               <strong>新建计划</strong>
               <span>{schedules.isLoading ? "加载中" : `${schedules.items.length} 条`}</span>
             </div>
-            <label>
+            <label className="workflow-side-panel__field">
               <span>工作流模板</span>
-              <select
-                onChange={(event) => setScheduleTemplateId(event.target.value)}
+              <Dropdown
+                onChange={setScheduleTemplateId}
+                options={workflowTemplates.map((template) => ({
+                  label: template.name,
+                  value: template.id
+                }))}
                 value={scheduleTemplateId || workflowTemplates[0]?.id || ""}
-              >
-                {workflowTemplates.map((template) => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
-                ))}
-              </select>
+              />
             </label>
-            <label>
+            <label className="workflow-side-panel__field">
               <span>绑定会议</span>
-              <select
-                onChange={(event) => setScheduleMeetingId(event.target.value)}
+              <Dropdown
+                onChange={setScheduleMeetingId}
+                options={[
+                  { label: "自动匹配（按模板类别）", value: "" },
+                  ...(selectedMeeting ? [{ label: selectedMeeting.title, value: selectedMeeting.id }] : [])
+                ]}
                 value={scheduleMeetingId || selectedMeeting?.id || ""}
-              >
-                <option value="">自动匹配（按模板类别）</option>
-                {selectedMeeting ? <option value={selectedMeeting.id}>{selectedMeeting.title}</option> : null}
-              </select>
+              />
             </label>
-            <label>
+            <label className="workflow-side-panel__field">
               <span>Cron 表达式</span>
               <input onChange={(event) => setScheduleCron(event.target.value)} placeholder="0 8 * * *" value={scheduleCron} />
             </label>
-            <div className="filter-strip">
+            <div className="workflow-side-panel__toolbar workflow-side-panel__toolbar--chips filter-strip">
               {cronPresets.map((preset) => (
                 <button
                   className={`filter-chip${scheduleCron === preset.value ? " is-active" : ""}`}
@@ -218,18 +220,20 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
                 </button>
               ))}
             </div>
-            <button
-              className="primary-button"
-              disabled={isWorkflowActionBusy || schedules.isMutating || !scheduleTemplateId && !workflowTemplates[0]?.id}
-              onClick={() => void schedules.createSchedule(
-                scheduleTemplateId || workflowTemplates[0]?.id || "",
-                scheduleCron,
-                scheduleMeetingId || selectedMeeting?.id || undefined
-              )}
-              type="button"
-            >
-              {schedules.isMutating ? "创建中..." : "创建定时任务"}
-            </button>
+            <div className="workflow-side-panel__toolbar">
+              <button
+                className="primary-button"
+                disabled={isWorkflowActionBusy || schedules.isMutating || !scheduleTemplateId && !workflowTemplates[0]?.id}
+                onClick={() => void schedules.createSchedule(
+                  scheduleTemplateId || workflowTemplates[0]?.id || "",
+                  scheduleCron,
+                  scheduleMeetingId || selectedMeeting?.id || undefined
+                )}
+                type="button"
+              >
+                {schedules.isMutating ? "创建中..." : "创建定时任务"}
+              </button>
+            </div>
             {schedules.error ? <p className="memory-empty">{schedules.error}</p> : null}
             {schedules.feedback ? <p className="workflow-side-panel__feedback">{schedules.feedback}</p> : null}
           </section>
@@ -245,8 +249,8 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
                 const template = workflowTemplates.find((item) => item.id === schedule.templateId);
                 const latestHistory = schedule.executionHistory?.[0];
                 return (
-                  <article className="ide-list-row ide-list-row--action" key={schedule.id}>
-                    <div>
+                  <article className="workflow-side-panel__card workflow-side-panel__card--schedule" key={schedule.id}>
+                    <div className="workflow-side-panel__card-body">
                       <strong>{template?.name ?? schedule.templateId}</strong>
                       <small>
                         {schedule.cronExpression}
@@ -255,7 +259,7 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
                         {latestHistory ? ` · 最近运行 ${latestHistory.status}` : ""}
                       </small>
                     </div>
-                    <div className="workflow-side-panel__secondary">
+                    <div className="workflow-side-panel__card-actions">
                       <button
                         className="ghost-button"
                         disabled={isWorkflowActionBusy || schedules.isMutating}

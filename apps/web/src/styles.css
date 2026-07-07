@@ -30,6 +30,17 @@
   --tone-decision: #b8872a;
   --tone-action: #cc6f5f;
   --card-border: #c3d4dc;
+  --field-height: 34px;
+  --field-padding-x: 10px;
+  --field-padding-y: 8px;
+  --field-radius: 6px;
+  --field-border: #d8dee7;
+  --field-bg: #ffffff;
+  --field-color: #111827;
+  --field-font-size: 0.78rem;
+  --field-textarea-min-height: 88px;
+  --field-border-hover: #8fc0c5;
+  --field-focus-ring: 0 0 0 2px rgba(143, 192, 197, 0.18);
   font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif;
 }
 
@@ -806,11 +817,6 @@ body::before, body::after {
   grid-template-columns: 1fr;
 }
 
-.queue-controls input, .queue-controls .dropdown__trigger {
-  border-radius: 6px;
-  min-height: 36px;
-}
-
 .meeting-card {
   background: transparent;
   border: 1px solid transparent;
@@ -1209,17 +1215,6 @@ body::before, body::after {
 .ide-form label {
   display: grid;
   gap: 5px;
-}
-
-.ide-form input, .ide-form textarea {
-  background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  color: #111827;
-  min-height: 34px;
-  outline: 0;
-  padding: 8px;
-  width: 100%;
 }
 
 .ide-form textarea {
@@ -1741,21 +1736,107 @@ body::before, body::after {
 }
 
 .knowledge-documents-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  margin-bottom: 0.75rem;
-}
-
-.knowledge-documents-panel label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  display: grid;
+  gap: 10px;
 }
 
 .knowledge-documents-panel textarea {
   min-height: 88px;
   resize: vertical;
+}
+
+.workflow-side-panel__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workflow-side-panel__field > span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.workflow-side-panel__field textarea {
+  min-height: var(--field-textarea-min-height);
+}
+
+.workflow-side-panel__card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.workflow-side-panel__card--muted {
+  background: #f8fafc;
+}
+
+.workflow-side-panel__card--accent {
+  background: #f4faf7;
+  border-color: #cfe3d8;
+}
+
+.workflow-side-panel__card-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workflow-side-panel__card-body strong {
+  color: #111827;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.workflow-side-panel__card-body small {
+  color: #64748b;
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.workflow-side-panel__card-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workflow-side-panel__card-actions .ghost-button {
+  font-size: 0.76rem;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.workflow-side-panel__toolbar {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-side-panel__toolbar--actions {
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workflow-side-panel__toolbar--actions .ghost-button {
+  font-size: 0.76rem;
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+  .workflow-side-panel__toolbar--actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .run-latency-waterfall__waves {
@@ -1893,12 +1974,44 @@ body::before, body::after {
   margin: 0;
 }
 
+.run-latency-waterfall--compact .run-latency-waterfall__wave {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__wave-title {
+  border-bottom: 1px solid #e8edf2;
+  padding-bottom: 6px;
+}
+
 .run-latency-waterfall--compact .run-latency-waterfall__row {
-  grid-template-columns: minmax(84px, 108px) minmax(0, 1fr) 44px;
+  align-items: stretch;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "label"
+    "track";
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__label {
+  grid-area: label;
 }
 
 .run-latency-waterfall--compact .run-latency-waterfall__track {
-  height: 18px;
+  grid-area: track;
+  height: 22px;
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__meta {
+  display: none;
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__bar span {
+  font-size: 0.66rem;
+  padding: 0 6px;
 }
 
 .app-debug-panel--wide {
@@ -2432,6 +2545,78 @@ img, svg, canvas {
   max-width: 100%;
 }
 
+.field-control,
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="range"]):not([type="color"]),
+textarea,
+select,
+.dropdown__trigger {
+  appearance: none;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  box-sizing: border-box;
+  color: var(--field-color);
+  font: inherit;
+  font-size: var(--field-font-size);
+  line-height: 1.4;
+  min-height: var(--field-height);
+  min-width: 0;
+  outline: 0;
+  padding: 0 var(--field-padding-x);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  width: 100%;
+}
+
+textarea,
+textarea.field-control {
+  line-height: 1.45;
+  min-height: var(--field-textarea-min-height);
+  padding: var(--field-padding-y) var(--field-padding-x);
+  resize: vertical;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="range"]):not([type="color"]):hover,
+textarea:hover,
+select:hover,
+.dropdown__trigger:hover {
+  border-color: var(--field-border-hover);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="range"]):not([type="color"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="range"]):not([type="color"]):focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible,
+.dropdown.is-open .dropdown__trigger,
+.dropdown__trigger:focus-visible {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--field-focus-ring);
+}
+
+.command-search input {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--ink);
+  min-height: auto;
+  outline: 0;
+  padding: 0;
+}
+
+.command-search input:hover,
+.command-search input:focus,
+.command-search input:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: auto;
+  width: auto;
+}
+
 .section-kicker {
   color: #7a8a96;
   display: block;
@@ -2444,23 +2629,20 @@ img, svg, canvas {
 
 .command-search {
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
   display: flex;
   gap: 9px;
-  min-height: 44px;
+  min-height: var(--field-height);
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 var(--field-padding-x);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.command-search input {
-  background: transparent;
-  border: 0;
-  color: var(--ink);
-  min-width: 0;
-  outline: 0;
-  width: 100%;
+.command-search:focus-within {
+  border-color: var(--field-border-hover);
+  box-shadow: var(--field-focus-ring);
 }
 
 .queue-controls span, .meeting-form label span, .meeting-form-section__header span, .detail-grid span {
@@ -2471,40 +2653,28 @@ img, svg, canvas {
 }
 
 .dropdown {
-  --dropdown-font-size: 0.9rem;
+  --dropdown-font-size: var(--field-font-size);
   --dropdown-option-font-size: var(--dropdown-font-size);
   --dropdown-option-line-height: 1.35;
-  --dropdown-option-min-height: 38px;
+  --dropdown-option-min-height: calc(var(--field-height) + 4px);
   min-width: 0;
   position: relative;
 }
 
 .dropdown__trigger {
   align-items: center;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(214, 224, 229, 0.96);
-  border-radius: 12px;
-  color: var(--ink);
   cursor: pointer;
   display: flex;
-  font-size: var(--dropdown-font-size);
   justify-content: space-between;
-  min-height: 42px;
-  min-width: 0;
-  padding: 0 12px;
   text-align: left;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
-  width: 100%;
 }
 
 .dropdown__trigger:hover {
   background: #fbfefe;
-  border-color: #a7ced2;
 }
 
 .dropdown.is-open .dropdown__trigger {
-  border-color: #8fc0c5;
-  box-shadow: 0 0 0 3px rgba(47, 125, 134, 0.08);
+  background: #fbfefe;
 }
 
 .dropdown__value {
@@ -2758,23 +2928,8 @@ img, svg, canvas {
   min-width: 0;
 }
 
-.queue-controls input, .meeting-form input, .meeting-form textarea, .detail-section input, .detail-section textarea, .editor-row input, .editor-row textarea {
-  appearance: none;
-  background: rgba(248, 251, 252, 0.94);
-  border: 1px solid rgba(214, 224, 229, 0.94);
-  border-radius: 12px;
-  color: var(--ink);
-  min-height: 42px;
-  min-width: 0;
-  outline: 0;
-  padding: 0 12px;
-  width: 100%;
-}
-
 .meeting-form textarea, .detail-section textarea, .editor-row textarea {
   min-height: 112px;
-  padding: 12px;
-  resize: vertical;
 }
 
 .meeting-list {
@@ -4105,8 +4260,8 @@ body:has(.retool-shell) {
   border-radius: 0;
 }
 
-.retool-shell .status-badge, .retool-shell .priority-badge, .retool-shell .tag-row span, .retool-shell .filter-chip, .retool-shell .dropdown__trigger, .retool-shell input, .retool-shell textarea {
-  border-radius: 6px;
+.retool-shell .status-badge, .retool-shell .priority-badge, .retool-shell .tag-row span, .retool-shell .filter-chip, .retool-shell .dropdown__trigger, .retool-shell input, .retool-shell textarea, .retool-shell select {
+  border-radius: var(--field-radius);
 }
 
 @media (max-width: 1280px) {
@@ -5194,23 +5349,6 @@ body:has(.retool-shell) {
   font-weight: 700;
 }
 
-.auth-form input {
-  background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 7px;
-  color: #111827;
-  font: inherit;
-  min-height: 40px;
-  outline: 0;
-  padding: 8px 10px;
-  width: 100%;
-}
-
-.auth-form input:focus {
-  border-color: #8fc0c5;
-  box-shadow: 0 0 0 3px rgba(143, 192, 197, 0.18);
-}
-
 .auth-error {
   background: #fef2f2;
   border: 1px solid #fecaca;
@@ -5595,10 +5733,6 @@ body:has(.retool-shell) {
   display: grid;
   gap: 0.5rem;
   grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.account-service-key-app__create input {
-  min-height: 36px;
 }
 
 .account-service-key-app__created {
@@ -6645,15 +6779,6 @@ body:has(.retool-shell) {
   min-width: 0;
 }
 
-.workbench-grid .ide-inspector .ide-form input, .workbench-grid .ide-inspector .ide-form textarea, .workbench-grid .ide-inspector .ide-form select {
-  background: #ffffff;
-  box-sizing: border-box;
-  min-height: 32px;
-  padding: 7px 8px;
-  border-color: #d7e2e5;
-  color: #142331;
-}
-
 .workbench-grid .ide-inspector .ide-form label {
   min-width: 0;
   color: #596a72;
@@ -6941,12 +7066,14 @@ body:has(.retool-shell) {
 }
 
 .workbench-grid .workflow-support-panel .knowledge-vector-search {
-  background: #eef6f2;
-  border: 1px dashed #b8d4c8;
-  border-radius: 8px;
-  display: grid;
   gap: 8px;
-  padding: 10px;
+}
+
+.workbench-grid .workflow-support-panel .knowledge-vector-search.workflow-side-panel__card--accent {
+  background: #f4faf7;
+  border: 1px solid #cfe3d8;
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 .workbench-grid .workflow-support-panel .knowledge-vector-search label {
@@ -6956,18 +7083,21 @@ body:has(.retool-shell) {
 
 .workbench-grid .workflow-support-panel .knowledge-vector-search label > span {
   color: #35594a;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
 .workbench-grid .workflow-support-panel .knowledge-vector-search__row {
+  align-items: stretch;
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.workbench-grid .workflow-support-panel .knowledge-vector-search__row input {
+.workbench-grid .workflow-support-panel .knowledge-vector-search__row .ghost-button {
+  align-self: stretch;
   min-height: 34px;
+  white-space: nowrap;
 }
 
 .workbench-grid .workflow-support-panel .knowledge-vector-search__meta {
@@ -6976,11 +7106,17 @@ body:has(.retool-shell) {
 }
 
 .workbench-grid .workflow-support-panel .knowledge-index-panel {
-  display: grid;
   gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e6eee9;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.workbench-grid .workflow-support-panel .knowledge-index-panel.workflow-side-panel__card--muted {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 .workflow-side-panel__usage,
@@ -7183,16 +7319,6 @@ body:has(.retool-shell) {
   margin-top: 12px;
 }
 
-.account-ai-form input {
-  background: #ffffff;
-  border: 1px solid #d8e0dd;
-  border-radius: 7px;
-  color: #20302b;
-  min-height: 38px;
-  padding: 0 11px;
-  width: 100%;
-}
-
 .account-ai-form > div {
   display: grid;
   gap: 8px;
@@ -7320,8 +7446,8 @@ body:has(.retool-shell) {
 
 }
 
-.workbench-shell .primary-button, .workbench-shell .ghost-button, .workbench-shell .danger-button, .workbench-shell .filter-chip, .workbench-shell .dropdown__trigger, .workbench-shell .command-search, .workbench-shell input, .workbench-shell textarea, .workbench-shell select {
-  border-radius: 6px;
+.workbench-shell .primary-button, .workbench-shell .ghost-button, .workbench-shell .danger-button, .workbench-shell .filter-chip, .workbench-shell .command-search {
+  border-radius: var(--field-radius);
 }
 
 .workbench-shell .primary-button, .workbench-shell .ghost-button, .workbench-shell .danger-button {
@@ -7370,14 +7496,7 @@ body:has(.retool-shell) {
 }
 
 .workbench-grid .meeting-queue .command-search, .workbench-grid .meeting-queue .dropdown__trigger, .workbench-grid .meeting-queue .queue-controls input {
-  background: #ffffff;
-  border-color: #d8e4e6;
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
-}
-
-.workbench-grid .meeting-queue .dropdown__trigger:hover, .workbench-grid .meeting-queue .queue-controls input:focus {
-  border-color: #8fc0c5;
-  box-shadow: 0 0 0 3px rgba(143, 192, 197, 0.14);
 }
 
 .workbench-grid .filter-chip {
@@ -7455,12 +7574,6 @@ body:has(.retool-shell) {
 .workbench-grid .canvas-editor-actions button {
   min-height: 30px;
   padding: 0 10px;
-}
-
-.workbench-grid .ide-inspector .ide-form input:focus, .workbench-grid .ide-inspector .ide-form textarea:focus, .workbench-grid .ide-inspector .ide-form select:focus {
-  border-color: #8fc0c5;
-  box-shadow: 0 0 0 3px rgba(143, 192, 197, 0.14);
-  outline: 0;
 }
 
 .workbench-grid .workflow-canvas-summary .node-payload, .workbench-grid .workflow-canvas-summary .ide-runtime-grid, .workbench-grid .workflow-canvas-summary .ide-current-meeting {
@@ -7689,10 +7802,6 @@ body:has(.retool-shell) {
   gap: 6px;
 }
 
-.node-agent-version-diff__pickers select {
-  min-height: 36px;
-}
-
 .node-agent-version-diff__meta {
   color: #64748b;
   display: flex;
@@ -7761,16 +7870,24 @@ body:has(.retool-shell) {
 }
 
 .ide-config-actions--agent {
-  align-items: flex-start;
-  flex-direction: column;
+  display: grid;
   gap: 8px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ide-config-actions--agent .ghost-button {
+  justify-self: start;
+  max-width: 100%;
+  width: auto;
 }
 
 .ide-config-hint {
   color: #64748b;
   font-size: 0.78rem;
-  line-height: 1.5;
+  line-height: 1.55;
   margin: 0;
+  max-width: 42rem;
 }
 
 .app-hub__summary {
@@ -7833,18 +7950,6 @@ body:has(.retool-shell) {
   font-weight: 800;
 }
 
-.node-agent-search input {
-  background: #f8fafc;
-  border: 1px solid #d8dee7;
-  border-radius: 7px;
-  color: #111827;
-  font: inherit;
-  font-size: 0.82rem;
-  min-height: 36px;
-  min-width: 0;
-  padding: 8px 10px;
-}
-
 .node-agent-list {
   display: grid;
   align-content: start;
@@ -7856,18 +7961,11 @@ body:has(.retool-shell) {
 }
 
 .node-agent-editor .dropdown, .node-agent-schema-editor .dropdown {
-  --dropdown-font-size: 0.76rem;
   --dropdown-option-font-size: 0.68rem;
   --dropdown-option-line-height: 1.25;
   --dropdown-option-min-height: 28px;
   min-width: 0;
   width: 100%;
-}
-
-.node-agent-editor .dropdown__trigger, .node-agent-schema-editor .dropdown__trigger {
-  border-radius: 6px;
-  min-height: 32px;
-  padding: 0 8px;
 }
 
 .node-agent-editor .dropdown__value, .node-agent-schema-editor .dropdown__value {
@@ -8028,23 +8126,9 @@ body:has(.retool-shell) {
   font-weight: 800;
 }
 
-.node-agent-editor input, .node-agent-editor select, .node-agent-editor textarea, .node-agent-schema-field input, .node-agent-schema-field .dropdown, .node-agent-prompt-editor input, .node-agent-prompt-editor textarea {
-  background: #ffffff;
-  border: 1px solid #d8dee7;
-  border-radius: 6px;
-  color: #111827;
-  font: inherit;
-  font-size: 0.78rem;
-  min-height: 34px;
-  min-width: 0;
-  padding: 8px;
-  width: 100%;
-}
-
 .node-agent-editor textarea, .node-agent-prompt-editor textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   min-height: 96px;
-  resize: vertical;
 }
 
 .node-agent-prompt-editor textarea {
@@ -8282,19 +8366,6 @@ body:has(.retool-shell) {
   width: 100%;
 }
 
-.node-agent-map-row input, .node-agent-map-row select, .node-agent-schema-field input, .node-agent-schema-field select {
-  background: #ffffff;
-  border: 1px solid #d8dee7;
-  border-radius: 6px;
-  color: #111827;
-  font: inherit;
-  font-size: 0.76rem;
-  min-height: 32px;
-  min-width: 0;
-  padding: 7px 8px;
-  width: 100%;
-}
-
 .node-agent-toggle-row {
   align-items: center;
   display: flex;
@@ -8487,22 +8558,8 @@ body:has(.retool-shell) {
   font-weight: 800;
 }
 
-.app-input-field input, .app-input-field select, .app-input-field textarea {
-  background: #ffffff;
-  border: 1px solid #d8dee7;
-  border-radius: 6px;
-  color: #111827;
-  font: inherit;
-  font-size: 0.78rem;
-  min-height: 32px;
-  min-width: 0;
-  padding: 7px 8px;
-  width: 100%;
-}
-
 .app-input-field textarea {
   min-height: 64px;
-  resize: vertical;
 }
 
 .app-input-field small {
@@ -9594,11 +9651,6 @@ body:has(.retool-shell) {
   display: none;
 }
 
-.workbench-grid .meeting-queue .command-search:focus-within, .workbench-grid .meeting-queue .dropdown__trigger:hover, .workbench-grid .meeting-queue .queue-controls input:focus {
-  border-color: #8fc0c5;
-  box-shadow: 0 0 0 3px rgba(143, 192, 197, 0.14);
-}
-
 .app-hub__summary article, .app-card, .node-capability {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -9751,12 +9803,6 @@ body:has(.retool-shell) {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.runs-console-page__filters select,
-.runs-console-page__filters .dropdown__trigger,
-.runs-console-page__filters input {
-  min-height: 36px;
 }
 
 .runs-console-page__filters .dropdown {
@@ -10199,9 +10245,19 @@ body:has(.retool-shell) {
 }
 
 .workflow-side-panel__secondary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workflow-side-panel__secondary .ghost-button {
+  font-size: 0.76rem;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 8px;
+  white-space: nowrap;
+  width: 100%;
 }
 
 .workflow-side-panel__feedback {
