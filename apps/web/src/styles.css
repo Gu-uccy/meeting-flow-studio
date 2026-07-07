@@ -1549,6 +1549,21 @@ body::before, body::after {
   padding: 16px;
 }
 
+.workflow-template-version-panel.is-collapsed {
+  gap: 0;
+  padding: 10px 16px;
+}
+
+.workflow-template-version-panel.is-collapsed .workflow-template-version-panel__head p {
+  margin-bottom: 0;
+}
+
+.workflow-template-version-panel.is-expanded {
+  max-height: min(320px, 38vh);
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workflow-template-version-panel__head {
   align-items: end;
   display: flex;
@@ -1592,6 +1607,8 @@ body::before, body::after {
   display: grid;
   gap: 14px;
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  min-height: 0;
+  overflow: auto;
 }
 
 .workflow-template-version-list,
@@ -4669,13 +4686,19 @@ body:has(.retool-shell) {
 }
 
 .workbench-grid .ide-canvas-pane__body > .workflow-canvas-summary,
-.workbench-grid .ide-canvas-pane__body > .workflow-template-row {
+.workbench-grid .ide-canvas-pane__body > .workflow-template-row,
+.workbench-grid .ide-canvas-pane__body > .canvas-editor-actions,
+.workbench-grid .ide-canvas-pane__body > .workflow-template-version-panel {
   flex-shrink: 0;
 }
 
 .workbench-grid .ide-canvas-pane__body > .workflow-canvas.ide-canvas {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+}
+
+.workbench-grid--simplified .workflow-shell.workflow-shell--console.ide-workflow.is-editing .ide-canvas-pane__body > .workflow-canvas.ide-canvas {
+  min-height: 360px;
 }
 
 .workbench-grid .ide-canvas-pane__body > .runs-panel {
@@ -7957,7 +7980,7 @@ body:has(.retool-shell) {
   white-space: nowrap;
 }
 
-.node-agent-editor, .node-agent-schema-editor, .node-agent-prompt-editor, .node-agent-version-panel {
+.node-agent-editor, .node-agent-prompt-editor, .node-agent-version-panel {
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -7967,23 +7990,45 @@ body:has(.retool-shell) {
   padding: 12px;
 }
 
-.node-agent-editor label, .node-agent-schema-editor label, .node-agent-prompt-editor label {
+.node-agent-schema-editor {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  padding: 12px;
+}
+
+.node-agent-schema-editor__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.node-agent-editor label, .node-agent-prompt-editor label {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
 
-.node-agent-editor label:has(textarea), .node-agent-schema-editor label, .node-agent-prompt-editor label:has(textarea) {
+.node-agent-schema-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.node-agent-editor label:has(textarea), .node-agent-prompt-editor label:has(textarea) {
   grid-column: 1 / -1;
 }
 
-.node-agent-editor span, .node-agent-schema-editor span, .node-agent-prompt-editor span {
+.node-agent-editor span, .node-agent-schema-field > span, .node-agent-prompt-editor span {
   color: #64748b;
   font-size: 0.72rem;
   font-weight: 800;
 }
 
-.node-agent-editor input, .node-agent-editor select, .node-agent-editor textarea, .node-agent-schema-editor textarea, .node-agent-prompt-editor input, .node-agent-prompt-editor textarea {
+.node-agent-editor input, .node-agent-editor select, .node-agent-editor textarea, .node-agent-schema-field input, .node-agent-schema-field .dropdown, .node-agent-prompt-editor input, .node-agent-prompt-editor textarea {
   background: #ffffff;
   border: 1px solid #d8dee7;
   border-radius: 6px;
@@ -7996,17 +8041,17 @@ body:has(.retool-shell) {
   width: 100%;
 }
 
-.node-agent-editor textarea, .node-agent-schema-editor textarea, .node-agent-prompt-editor textarea {
+.node-agent-editor textarea, .node-agent-prompt-editor textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   min-height: 96px;
   resize: vertical;
 }
 
-.node-agent-schema-editor textarea, .node-agent-prompt-editor textarea {
+.node-agent-prompt-editor textarea {
   min-height: 150px;
 }
 
-.node-agent-editor button, .node-agent-schema-editor button, .node-agent-prompt-editor button {
+.node-agent-editor button, .node-agent-prompt-editor button {
   justify-self: end;
 }
 
@@ -8181,10 +8226,14 @@ body:has(.retool-shell) {
 }
 
 .node-agent-map-row, .node-agent-schema-row {
-  align-items: center;
+  align-items: end;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   display: grid;
-  gap: 8px;
+  gap: 8px 10px;
   min-width: 0;
+  padding: 10px;
 }
 
 .node-agent-map-row {
@@ -8192,14 +8241,48 @@ body:has(.retool-shell) {
 }
 
 .node-agent-schema-row {
-  grid-template-columns: minmax(88px, 0.9fr) minmax(96px, 1fr) minmax(90px, 0.8fr) auto minmax(96px, 1fr) minmax(120px, 1.3fr) auto;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(96px, 0.85fr) auto;
+  grid-template-areas:
+    "key label type required actions"
+    "default description description actions";
 }
 
 .node-agent-schema-row--output {
-  grid-template-columns: minmax(88px, 0.9fr) minmax(96px, 1fr) minmax(90px, 0.8fr) minmax(160px, 1.5fr) auto;
+  grid-template-areas:
+    "key label type actions"
+    "description description description actions";
 }
 
-.node-agent-map-row input, .node-agent-map-row select, .node-agent-schema-row input, .node-agent-schema-row select {
+.node-agent-schema-field:nth-child(1) { grid-area: key; }
+.node-agent-schema-field:nth-child(2) { grid-area: label; }
+.node-agent-schema-field:nth-child(3) { grid-area: type; }
+.node-agent-schema-field:nth-child(4) { grid-area: required; }
+.node-agent-schema-row--output .node-agent-schema-field:nth-child(4) { grid-area: description; }
+.node-agent-schema-row:not(.node-agent-schema-row--output) .node-agent-schema-field:nth-child(5) { grid-area: default; }
+.node-agent-schema-row:not(.node-agent-schema-row--output) .node-agent-schema-field:nth-child(6) { grid-area: description; }
+.node-agent-schema-row__actions { align-self: stretch; display: flex; grid-area: actions; justify-content: flex-end; }
+
+.node-agent-schema-field--wide {
+  min-width: 0;
+}
+
+.node-agent-schema-field--checkbox {
+  align-content: end;
+  display: grid;
+  justify-items: start;
+}
+
+.node-agent-schema-field--checkbox input {
+  min-height: auto;
+  width: auto;
+}
+
+.node-agent-schema-field .dropdown {
+  width: 100%;
+}
+
+.node-agent-map-row input, .node-agent-map-row select, .node-agent-schema-field input, .node-agent-schema-field select {
   background: #ffffff;
   border: 1px solid #d8dee7;
   border-radius: 6px;
@@ -8252,8 +8335,47 @@ body:has(.retool-shell) {
     height: auto;
   }
 
-  .node-agent-manager, .node-agent-detail__binding, .node-agent-card__maps, .node-agent-editor, .node-agent-schema-editor, .node-agent-prompt-editor, .node-agent-version-panel, .node-agent-prompt-grid, .node-agent-prompt-variable-list, .node-agent-map-row, .node-agent-schema-row, .node-agent-schema-row--output, .node-agent-playground__grid, .node-agent-debug-studio__inputs {
+  .node-agent-manager, .node-agent-detail__binding, .node-agent-card__maps, .node-agent-editor, .node-agent-prompt-editor, .node-agent-version-panel, .node-agent-prompt-grid, .node-agent-prompt-variable-list, .node-agent-map-row, .node-agent-playground__grid, .node-agent-debug-studio__inputs {
     grid-template-columns: 1fr;
+  }
+
+  .node-agent-schema-row,
+  .node-agent-schema-row--output {
+    grid-template-areas:
+      "key"
+      "label"
+      "type"
+      "required"
+      "default"
+      "description"
+      "actions";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .node-agent-schema-row--output {
+    grid-template-areas:
+      "key"
+      "label"
+      "type"
+      "description"
+      "actions";
+  }
+
+  .node-agent-schema-row--output .node-agent-schema-field:nth-child(4) {
+    grid-area: description;
+  }
+
+  .node-agent-schema-row:not(.node-agent-schema-row--output) .node-agent-schema-field:nth-child(5) {
+    grid-area: default;
+  }
+
+  .node-agent-schema-row:not(.node-agent-schema-row--output) .node-agent-schema-field:nth-child(6) {
+    grid-area: description;
+  }
+
+  .node-agent-schema-row__actions {
+    align-self: auto;
+    justify-content: flex-start;
   }
 
   .node-agent-list {

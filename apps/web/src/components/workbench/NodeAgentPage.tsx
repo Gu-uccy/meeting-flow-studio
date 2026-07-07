@@ -464,13 +464,33 @@ export function NodeAgentPage() {
                         const updateField = (patch: Partial<AiApplicationInputField>) => setSchemaFields(selectedApp.id, "inputSchema", fields.map((f, j) => j === i ? { ...f, ...patch } : f));
                         return (
                           <div className="node-agent-schema-row" key={`${field.key}-${i}`}>
-                            <input aria-label="key" onChange={(e) => updateField({ key: e.target.value })} placeholder="key" value={field.key} />
-                            <input aria-label="label" onChange={(e) => updateField({ label: e.target.value })} placeholder="label" value={field.label} />
-                            <Dropdown ariaLabel="type" onChange={(v) => updateField({ type: v })} options={aiApplicationInputTypes.map((t) => ({ label: t, value: t }))} value={field.type} />
-                            <label className="node-agent-toggle-row"><input checked={field.required} onChange={(e) => updateField({ required: e.target.checked })} type="checkbox" />必填</label>
-                            <input aria-label="default value" onChange={(e) => updateField({ defaultValue: e.target.value })} placeholder="default" value={field.defaultValue} />
-                            <input aria-label="description" onChange={(e) => updateField({ description: e.target.value })} placeholder="description" value={field.description} />
-                            <button className="ghost-button" onClick={() => setSchemaFields(selectedApp.id, "inputSchema", fields.filter((_, j) => j !== i))} type="button">删除</button>
+                            <label className="node-agent-schema-field">
+                              <span>Key</span>
+                              <input aria-label="key" onChange={(e) => updateField({ key: e.target.value })} placeholder="meetingRequirement" value={field.key} />
+                            </label>
+                            <label className="node-agent-schema-field">
+                              <span>显示名</span>
+                              <input aria-label="label" onChange={(e) => updateField({ label: e.target.value })} placeholder="会议需求" value={field.label} />
+                            </label>
+                            <label className="node-agent-schema-field">
+                              <span>类型</span>
+                              <Dropdown ariaLabel="type" onChange={(v) => updateField({ type: v })} options={aiApplicationInputTypes.map((t) => ({ label: t, value: t }))} value={field.type} />
+                            </label>
+                            <label className="node-agent-schema-field node-agent-schema-field--checkbox node-agent-toggle-row">
+                              <span>必填</span>
+                              <input checked={field.required} onChange={(e) => updateField({ required: e.target.checked })} type="checkbox" />
+                            </label>
+                            <label className="node-agent-schema-field node-agent-schema-field--wide">
+                              <span>默认值</span>
+                              <input aria-label="default value" onChange={(e) => updateField({ defaultValue: e.target.value })} placeholder="可选默认值" value={field.defaultValue} />
+                            </label>
+                            <label className="node-agent-schema-field node-agent-schema-field--wide">
+                              <span>说明</span>
+                              <input aria-label="description" onChange={(e) => updateField({ description: e.target.value })} placeholder="字段用途说明" value={field.description} />
+                            </label>
+                            <div className="node-agent-schema-row__actions">
+                              <button className="ghost-button" onClick={() => setSchemaFields(selectedApp.id, "inputSchema", fields.filter((_, j) => j !== i))} type="button">删除</button>
+                            </div>
                           </div>
                         );
                       })}
@@ -484,15 +504,31 @@ export function NodeAgentPage() {
                         const updateField = (patch: Partial<AiApplicationOutputField>) => setSchemaFields(selectedApp.id, "outputSchema", fields.map((f, j) => j === i ? { ...f, ...patch } : f));
                         return (
                           <div className="node-agent-schema-row node-agent-schema-row--output" key={`${field.key}-${i}`}>
-                            <input aria-label="key" onChange={(e) => updateField({ key: e.target.value })} placeholder="key" value={field.key} />
-                            <input aria-label="label" onChange={(e) => updateField({ label: e.target.value })} placeholder="label" value={field.label} />
-                            <Dropdown ariaLabel="type" onChange={(v) => updateField({ type: v })} options={aiApplicationOutputTypes.map((t) => ({ label: t, value: t }))} value={field.type} />
-                            <input aria-label="description" onChange={(e) => updateField({ description: e.target.value })} placeholder="description" value={field.description} />
-                            <button className="ghost-button" onClick={() => setSchemaFields(selectedApp.id, "outputSchema", fields.filter((_, j) => j !== i))} type="button">删除</button>
+                            <label className="node-agent-schema-field">
+                              <span>Key</span>
+                              <input aria-label="key" onChange={(e) => updateField({ key: e.target.value })} placeholder="result" value={field.key} />
+                            </label>
+                            <label className="node-agent-schema-field">
+                              <span>显示名</span>
+                              <input aria-label="label" onChange={(e) => updateField({ label: e.target.value })} placeholder="结果" value={field.label} />
+                            </label>
+                            <label className="node-agent-schema-field">
+                              <span>类型</span>
+                              <Dropdown ariaLabel="type" onChange={(v) => updateField({ type: v })} options={aiApplicationOutputTypes.map((t) => ({ label: t, value: t }))} value={field.type} />
+                            </label>
+                            <label className="node-agent-schema-field node-agent-schema-field--wide">
+                              <span>说明</span>
+                              <input aria-label="description" onChange={(e) => updateField({ description: e.target.value })} placeholder="输出字段说明" value={field.description} />
+                            </label>
+                            <div className="node-agent-schema-row__actions">
+                              <button className="ghost-button" onClick={() => setSchemaFields(selectedApp.id, "outputSchema", fields.filter((_, j) => j !== i))} type="button">删除</button>
+                            </div>
                           </div>
                         );
                       })}
-                      <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void saveSelectedNodeSchema()} type="button">保存 Schema</button>
+                      <div className="node-agent-schema-editor__footer">
+                        <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void saveSelectedNodeSchema()} type="button">保存 Schema</button>
+                      </div>
                     </div>
                   </>
                 )}

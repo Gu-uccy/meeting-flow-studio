@@ -26,6 +26,7 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
   } = props;
 
   const versions = selectedTemplate.versions ?? [];
+  const [isExpanded, setIsExpanded] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [baseVersionId, setBaseVersionId] = useState(versions[0]?.id ?? "");
   const [targetVersionId, setTargetVersionId] = useState(versions[1]?.id ?? versions[0]?.id ?? "");
@@ -44,12 +45,19 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
   const canCreateVersion = !isCanvasDirty && !isWorkflowActionBusy;
 
   return (
-    <section className="workflow-template-version-panel" aria-label="模板版本管理">
+    <section
+      className={`workflow-template-version-panel${isExpanded ? " is-expanded" : " is-collapsed"}`}
+      aria-label="模板版本管理"
+    >
       <div className="workflow-template-version-panel__head">
         <div>
           <span className="section-kicker">Template Versions</span>
           <strong>模板版本 / 回滚</strong>
-          <p>保存画布快照或发布版本，并对比节点与配置变更。</p>
+          <p>
+            {isExpanded
+              ? "保存画布快照或发布版本，并对比节点与配置变更。"
+              : `${versions.length} 条版本记录，展开后可对比与回滚。`}
+          </p>
         </div>
         <div className="workflow-template-version-panel__actions">
           <button
@@ -68,9 +76,19 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
           >
             发布版本
           </button>
+          <button
+            aria-expanded={isExpanded}
+            className="ghost-button"
+            onClick={() => setIsExpanded((current) => !current)}
+            type="button"
+          >
+            {isExpanded ? "收起" : "展开"}
+          </button>
         </div>
       </div>
 
+      {isExpanded && (
+        <>
       {isCanvasDirty && (
         <p className="workflow-template-version-panel__hint">
           画布有未保存修改。请先
@@ -183,6 +201,8 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
           )}
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }
