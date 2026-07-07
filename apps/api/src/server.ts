@@ -8,9 +8,11 @@ import { ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 import { loadMeetings } from "./meetingStore.js";
 import { loadMeetingMemories } from "./memoryStore.js";
 import { syncVectorKnowledgeIndex } from "./vectorStore.js";
-import { loadWorkflowRuns, loadWorkflowTemplates, saveWorkflowRuns } from "./workflowStore.js";
+import { loadWorkflowRuns, loadWorkflowTemplates } from "./workflowStore.js";
 import { loadUsers, migrateExistingMeetings } from "./userStore.js";
-import { createWorkflowRun, sortRunsByStartedAtDesc } from "./lib/context.js";
+import { enqueueWorkflowRunJob } from "./services/workflowJobRunner.js";
+import { recordScheduleExecution } from "./services/scheduler.js";
+import { buildWorkflowExecutionOptions } from "./lib/executionOptions.js";
 import { startScheduler } from "./services/scheduler.js";
 
 // Route modules
@@ -176,19 +178,21 @@ await app.register(integrationRoutes);
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "127.0.0.1";
 
-startScheduler(ctx.workflowTemplates, ctx.meetings, async (templateId: string) => {
-  const template = ctx.workflowTemplates.find((t) => t.id === templateId);
+startScheduler(ctx.workflowTemplates, ctx.meetings, async (schedule) => {
+  const template = ctx.workflowTemplates.find((t) => t.id === schedule.templateId);
   if (!template) return;
 
-  const matchingMeeting = ctx.meetings.find((m) => m.type === template.category) ?? ctx.meetings[0];
+  const matchingMeeting =
+    (schedule.meetingId ? ctx.meetings.find((m) => m.id === schedule.meetingId) : null) ??
+    ctx.meetings.find((m) => m.type === template.category) ??
+    ctx.meetings[0];
   if (!matchingMeeting) return;
 
   try {
-    const run = await createWorkflowRun(matchingMeeting, template);
-    ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    broadcastWorkflowUpdate(run);
-    app.log.info(`Scheduled workflow "${template.name}" executed: ${run.id}`);
+    const executionOptions = await buildWorkflowExecutionOptions(matchingMeeting.ownerUserId || "system");
+    const run = await enqueueWorkflowRunJob(ctx, matchingMeeting, template, executionOptions);
+    recordScheduleExecution(schedule.id, run.id, run.status);
+    app.log.info(`Scheduled workflow "${template.name}" started: ${run.id}`);
   } catch (error) {
     app.log.error(`Scheduled workflow failed: ${String(error)}`);
   }

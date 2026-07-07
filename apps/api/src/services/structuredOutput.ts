@@ -1,5 +1,32 @@
 import type { AiApplicationOutputField } from "@meeting-flow/shared";
 
+export function buildAnthropicJsonSchema(schema: AiApplicationOutputField[]) {
+  const properties = Object.fromEntries(
+    schema.map((field) => {
+      if (field.type === "number") {
+        return [field.key, { type: "number", description: field.description || field.label }];
+      }
+
+      if (field.type === "boolean") {
+        return [field.key, { type: "boolean", description: field.description || field.label }];
+      }
+
+      if (field.type === "json") {
+        return [field.key, { type: "object", description: field.description || field.label, additionalProperties: true }];
+      }
+
+      return [field.key, { type: "string", description: field.description || field.label }];
+    })
+  );
+
+  return {
+    type: "object",
+    properties,
+    required: schema.map((field) => field.key),
+    additionalProperties: false
+  };
+}
+
 export function buildStructuredOutputSchemaPrompt(schema: AiApplicationOutputField[]) {
   if (schema.length === 0) {
     return "";

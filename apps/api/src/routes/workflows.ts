@@ -2,11 +2,18 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { buildAiApplicationsFromTemplates, ensureProductWorkflowNodeExecutors, buildNodeAgentApplicationId } from "@meeting-flow/shared";
 import type { AppContext } from "../lib/context.js";
 import type { ProductWorkflowTemplate, ProductWorkflowNodeExecutor, ProductWorkflowRun } from "@meeting-flow/shared";
-import { selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, sortRunsByStartedAtDesc, notifyWorkflowUpdate } from "../lib/context.js";
+import { selectWorkflowTemplate, persistWorkflowMemories, persistWorkflowMeetingWriteback, sortRunsByStartedAtDesc, notifyWorkflowUpdate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { saveWorkflowTemplates, saveWorkflowRuns } from "../workflowStore.js";
 import { advanceWorkflowExecution } from "../services/executor.js";
-import { getAllSchedules, addSchedule, removeSchedule } from "../services/scheduler.js";
+import { getAllSchedules, addSchedule, removeSchedule, updateSchedule } from "../services/scheduler.js";
+import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
+import {
+  enqueueWorkflowResumeJob,
+  enqueueWorkflowRunJob,
+  isWorkflowRunActive,
+  markWorkflowRunCancelled
+} from "../services/workflowJobRunner.js";
 
 export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
   // Templates
@@ -114,14 +121,13 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = selectWorkflowTemplate(meeting, ctx.workflowTemplates, body.templateId);
     if (!template) return reply.code(404).send({ message: "未找到可用工作流模板" });
 
-    const run = await createWorkflowRun(meeting, template);
-    ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    await persistWorkflowMeetingWriteback(meeting, run, ctx);
-    const memories = await persistWorkflowMemories(meeting, run, ctx);
+    const run = await enqueueWorkflowRunJob(ctx, meeting, template, await buildWorkflowExecutionOptions(request.user.id));
 
-    notifyWorkflowUpdate(ctx, run);
-    return reply.code(201).send({ run, memoryCount: memories.length, message: run.status === "blocked" ? "流程已启动，但需要人工处理阻塞节点" : "流程已启动并完成运行" });
+    return reply.code(201).send({
+      run,
+      memoryCount: 0,
+      message: run.status === "running" ? "流程已启动，正在后台执行" : "流程已启动"
+    });
   });
 
   app.patch("/api/workflows/runs/:id/advance", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -137,7 +143,14 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = ctx.workflowTemplates.find((t) => t.id === run.templateId);
     if (!meeting || !template) return reply.code(404).send({ message: "关联的会议或模板已不存在" });
 
-    const advancedRun = await advanceWorkflowExecution(run, meeting, template, resolutionNote);
+    const advancedRun = await advanceWorkflowExecution(
+      run,
+      meeting,
+      template,
+      resolutionNote,
+      undefined,
+      await buildWorkflowExecutionOptions(request.user.id)
+    );
     ctx.workflowRuns = ctx.workflowRuns.map((r) => (r.id === id ? advancedRun : r)).sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
     await persistWorkflowMeetingWriteback(meeting, advancedRun, ctx);
@@ -156,13 +169,19 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = ctx.workflowTemplates.find((t) => t.id === originalRun.templateId);
     if (!meeting || !template) return reply.code(404).send({ message: "关联的会议或模板已不存在" });
 
-    const newRun = await createWorkflowRun(meeting, template);
-    ctx.workflowRuns = [newRun, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    await persistWorkflowMeetingWriteback(meeting, newRun, ctx);
-    const memories = await persistWorkflowMemories(meeting, newRun, ctx);
-    notifyWorkflowUpdate(ctx, newRun);
-    return reply.code(201).send({ run: newRun, memoryCount: memories.length, message: "流程已重新启动" });
+    const newRun = await enqueueWorkflowResumeJob(
+      ctx,
+      meeting,
+      template,
+      originalRun,
+      await buildWorkflowExecutionOptions(request.user.id)
+    );
+
+    return reply.code(201).send({
+      run: newRun,
+      memoryCount: 0,
+      message: "已从失败节点断点续跑"
+    });
   });
 
   app.post("/api/workflows/runs/:id/cancel", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -170,16 +189,27 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const run = ctx.workflowRuns.find((r) => r.id === id);
     if (!run) return reply.code(404).send({ message: "未找到对应运行记录" });
     if (run.status === "completed" || run.status === "failed") return reply.code(400).send({ message: "该运行已结束，无法取消" });
+    if (!isWorkflowRunActive(run.id)) return reply.code(400).send({ message: "该运行当前不在执行中" });
 
-    const cancelledRun: ProductWorkflowRun = {
-      ...run, status: "failed", endedAt: new Date().toISOString(),
-      logs: [...run.logs, { id: `log-${Date.now()}-cancel`, time: new Date().toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }), level: "warning", message: "流程已被用户取消" }],
+    markWorkflowRunCancelled(run.id);
+
+    const cancellingRun: ProductWorkflowRun = {
+      ...run,
+      logs: [
+        ...run.logs,
+        {
+          id: `log-${Date.now()}-cancel-request`,
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          level: "warning",
+          message: "已请求取消，正在停止后续节点"
+        }
+      ]
     };
 
-    ctx.workflowRuns = ctx.workflowRuns.map((r) => (r.id === id ? cancelledRun : r));
+    ctx.workflowRuns = ctx.workflowRuns.map((r) => (r.id === id ? cancellingRun : r));
     await saveWorkflowRuns(ctx.workflowRuns);
-    notifyWorkflowUpdate(ctx, cancelledRun);
-    return { run: cancelledRun, message: "流程已取消" };
+    notifyWorkflowUpdate(ctx, cancellingRun);
+    return { run: cancellingRun, message: "取消请求已提交" };
   });
 
   // Schedules
@@ -188,17 +218,51 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
   }));
 
   app.post("/api/workflows/schedules", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
-    const body = request.body as { templateId?: string; cronExpression?: string };
+    const body = request.body as { templateId?: string; cronExpression?: string; meetingId?: string };
     const templateId = typeof body.templateId === "string" ? body.templateId.trim() : "";
     const cronExpression = typeof body.cronExpression === "string" ? body.cronExpression.trim() : "";
+    const meetingId = typeof body.meetingId === "string" ? body.meetingId.trim() : "";
     if (!templateId) return reply.code(400).send({ message: "请选择工作流模板" });
     if (!cronExpression) return reply.code(400).send({ message: "请填写 Cron 表达式" });
 
     const template = ctx.workflowTemplates.find((t) => t.id === templateId);
     if (!template) return reply.code(404).send({ message: "未找到对应模板" });
 
-    const schedule = addSchedule({ id: `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, templateId, cronExpression, enabled: true });
+    if (meetingId) {
+      const meeting = ctx.meetings.find((item) => item.id === meetingId);
+      if (!meeting) return reply.code(404).send({ message: "未找到对应会议" });
+    }
+
+    const schedule = addSchedule({
+      id: `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      templateId,
+      cronExpression,
+      enabled: true,
+      meetingId: meetingId || undefined,
+      executionHistory: []
+    });
     return reply.code(201).send({ schedule, message: "计划任务已创建" });
+  });
+
+  app.patch("/api/workflows/schedules/:id", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const id = (request.params as { id: string }).id;
+    const body = request.body as { enabled?: boolean; meetingId?: string | null; cronExpression?: string };
+    const existing = getAllSchedules().find((item) => item.id === id);
+    if (!existing) return reply.code(404).send({ message: "未找到对应计划任务" });
+
+    if (typeof body.meetingId === "string" && body.meetingId.trim()) {
+      const meeting = ctx.meetings.find((item) => item.id === body.meetingId?.trim());
+      if (!meeting) return reply.code(404).send({ message: "未找到对应会议" });
+    }
+
+    const schedule = updateSchedule(id, {
+      enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
+      meetingId: body.meetingId === null ? undefined : typeof body.meetingId === "string" ? body.meetingId.trim() || undefined : existing.meetingId,
+      cronExpression: typeof body.cronExpression === "string" && body.cronExpression.trim() ? body.cronExpression.trim() : existing.cronExpression
+    });
+
+    if (!schedule) return reply.code(404).send({ message: "未找到对应计划任务" });
+    return { schedule, message: "计划任务已更新" };
   });
 
   app.delete("/api/workflows/schedules/:id", { preHandler: [authenticate] }, async (request: FastifyRequest) => {

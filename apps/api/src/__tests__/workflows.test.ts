@@ -1,6 +1,27 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildTestApp, registerAndGetToken, createTestMeeting } from "../lib/testApp.js";
 import type { FastifyInstance } from "fastify";
+import type { ProductWorkflowRun } from "@meeting-flow/shared";
+
+async function waitForWorkflowRun(app: FastifyInstance, token: string, runId: string, timeoutMs = 8000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/workflows/runs/${runId}`,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const body = JSON.parse(res.body) as { run: ProductWorkflowRun };
+    if (body.run.status !== "running") {
+      return body.run;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+
+  throw new Error(`Timed out waiting for workflow run ${runId}`);
+}
 
 describe("Workflows API", () => {
   let app: FastifyInstance;
@@ -104,7 +125,10 @@ describe("Workflows API", () => {
     expect(body.run).toBeDefined();
     expect(body.run.meetingId).toBe(meeting.id);
     expect(body.run.templateId).toBe("template-test-001");
-    expect(["completed", "blocked", "running"]).toContain(body.run.status);
+    expect(body.run.status).toBe("running");
+
+    const completedRun = await waitForWorkflowRun(app, token, body.run.id);
+    expect(["completed", "blocked", "failed"]).toContain(completedRun.status);
   });
 
   it("POST /api/workflows/runs returns 404 for missing meeting", async () => {

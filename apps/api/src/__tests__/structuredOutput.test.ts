@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAnthropicJsonSchema,
   buildStructuredOutputSchemaPrompt,
   extractJsonObject,
   validateStructuredOutput
 } from "../services/structuredOutput.js";
 
 describe("structuredOutput", () => {
+  it("builds anthropic json schema", () => {
+    const schema = buildAnthropicJsonSchema([
+      { key: "agendaDraft", label: "议程草案", type: "text", description: "会议议程" },
+      { key: "riskCount", label: "风险数", type: "number", description: "" }
+    ]);
+
+    expect(schema.type).toBe("object");
+    expect(schema.required).toEqual(["agendaDraft", "riskCount"]);
+    expect(schema.properties).toMatchObject({
+      agendaDraft: { type: "string" },
+      riskCount: { type: "number" }
+    });
+  });
+
   it("builds schema prompt with required field keys", () => {
     const prompt = buildStructuredOutputSchemaPrompt([
       { key: "agendaDraft", label: "议程草案", type: "text", description: "会议议程" },

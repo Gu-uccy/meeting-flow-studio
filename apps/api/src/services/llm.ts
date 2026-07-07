@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AiApplicationPromptConfig, ProductWorkflowNode, MeetingRecord } from "@meeting-flow/shared";
+import type { AiApplicationOutputField, AiApplicationPromptConfig, ProductWorkflowNode, MeetingRecord } from "@meeting-flow/shared";
+import { buildAnthropicJsonSchema } from "./structuredOutput.js";
 
 let client: Anthropic | null = null;
 
@@ -92,6 +93,63 @@ export async function callLLM(params: {
     model: response.model,
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens
+  };
+}
+
+export async function callLLMWithStructuredOutput(params: {
+  model: string;
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: string | number;
+  maxTokens?: number;
+  apiKey?: string;
+  outputSchema: AiApplicationOutputField[];
+}): Promise<LLMCallResult & { structuredOutput: Record<string, unknown> }> {
+  const anthropic = getClient(params.apiKey);
+  if (!anthropic) {
+    throw new Error("ANTHROPIC_API_KEY not configured");
+  }
+
+  if (params.outputSchema.length === 0) {
+    const result = await callLLM(params);
+    return { ...result, structuredOutput: {} };
+  }
+
+  const model = resolveModel(params.model);
+  const temperature = resolveTemperature(String(params.temperature ?? 0.5));
+  const maxTokens = params.maxTokens ?? 1024;
+
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    ...(params.systemPrompt?.trim() ? { system: params.systemPrompt } : {}),
+    messages: [{ role: "user", content: params.prompt }],
+    output_format: {
+      type: "json_schema",
+      schema: buildAnthropicJsonSchema(params.outputSchema)
+    }
+  } as Parameters<typeof anthropic.messages.create>[0]);
+
+  const message = response as Anthropic.Message;
+  const content = message.content
+    .filter((block: Anthropic.ContentBlock) => block.type === "text")
+    .map((block) => (block as Anthropic.TextBlock).text)
+    .join("\n");
+
+  let structuredOutput: Record<string, unknown> = {};
+  try {
+    structuredOutput = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    throw new Error("模型未返回合法 JSON Schema 输出");
+  }
+
+  return {
+    content,
+    model: message.model,
+    inputTokens: message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens,
+    structuredOutput
   };
 }
 

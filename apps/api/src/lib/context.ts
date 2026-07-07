@@ -17,7 +17,8 @@ import { applyMeetingRuntimeWriteback } from "../services/runtimeMapping.js";
 import { buildPermissions } from "../services/auth.js";
 import { saveMeetings } from "../meetingStore.js";
 import { saveMeetingMemories } from "../memoryStore.js";
-import { executeWorkflowRun } from "../services/executor.js";
+import { executeWorkflowRun, type WorkflowExecutionOptions } from "../services/executor.js";
+import { executeWorkflowRunSync } from "../services/workflowJobRunner.js";
 import { buildAiApplicationsFromTemplates } from "@meeting-flow/shared";
 
 // ── App context shared across all route modules ──
@@ -172,8 +173,17 @@ export function selectWorkflowTemplate(
   );
 }
 
-export async function createWorkflowRun(meeting: MeetingRecord, template: ProductWorkflowTemplate) {
-  return executeWorkflowRun(meeting, template);
+export async function createWorkflowRun(
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  options?: WorkflowExecutionOptions,
+  ctx?: AppContext
+) {
+  if (ctx) {
+    return executeWorkflowRunSync(ctx, meeting, template, options);
+  }
+
+  return executeWorkflowRun(meeting, template, undefined, options);
 }
 
 export function attachPermissions(meeting: MeetingRecord, user?: PublicUser): MeetingRecordWithPermissions {

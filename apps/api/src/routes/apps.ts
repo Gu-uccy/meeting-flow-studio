@@ -11,6 +11,8 @@ import { buildPermissions } from "../services/auth.js";
 import { saveWorkflowTemplates, saveWorkflowRuns } from "../workflowStore.js";
 import { executeSingleNodeRun } from "../services/executor.js";
 import { sortRunsByStartedAtDesc } from "../lib/context.js";
+import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
+import { demotePublishedVersions } from "../services/nodeAgentRuntime.js";
 
 export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
   // List all AI applications
@@ -46,7 +48,20 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
     const version = buildNodeAgentVersion(application, template, node, status, summary, request.user.name);
     const updatedTemplate = ensureProductWorkflowNodeExecutors({
       ...template, status: status === "published" ? "published" : template.status, updatedAt: version.createdAt,
-      nodes: template.nodes.map((n) => n.id === node.id ? { ...n, agentVersions: [version, ...(n.agentVersions ?? [])].slice(0, 30) } : n),
+      nodes: template.nodes.map((n) => {
+        if (n.id !== node.id) {
+          return n;
+        }
+
+        const nextVersions = status === "published"
+          ? demotePublishedVersions(n.agentVersions ?? [], version.id)
+          : (n.agentVersions ?? []);
+
+        return {
+          ...n,
+          agentVersions: [version, ...nextVersions].slice(0, 30)
+        };
+      }),
     });
 
     ctx.workflowTemplates = ctx.workflowTemplates.map((t) => (t.id === template.id ? updatedTemplate : t));
@@ -114,14 +129,26 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!template) return reply.code(404).send({ message: "应用绑定的工作流模板不存在" });
 
     const node = application.source === "node" && application.nodeId ? template.nodes.find((n) => n.id === application.nodeId) : null;
-    const run = node ? await executeSingleNodeRun(meeting, template, node, debugInputs) : await createWorkflowRun(meeting, template);
-    ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    await persistWorkflowMeetingWriteback(meeting, run, ctx);
-    const memories = await persistWorkflowMemories(meeting, run, ctx);
+    const executionOptions = await buildWorkflowExecutionOptions(request.user.id);
+    const run = node
+      ? await executeSingleNodeRun(meeting, template, node, debugInputs, executionOptions)
+      : await createWorkflowRun(meeting, template, executionOptions, ctx);
 
-    notifyWorkflowUpdate(ctx, run);
-    return reply.code(201).send({ application, inputs: debugInputs, run, memoryCount: memories.length, message: run.status === "blocked" ? "调试运行已创建，流程停在阻塞节点" : "调试运行已完成" });
+    if (node) {
+      ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
+      await saveWorkflowRuns(ctx.workflowRuns);
+      await persistWorkflowMeetingWriteback(meeting, run, ctx);
+      await persistWorkflowMemories(meeting, run, ctx);
+      notifyWorkflowUpdate(ctx, run);
+    }
+
+    return reply.code(201).send({
+      application,
+      inputs: debugInputs,
+      run,
+      memoryCount: 0,
+      message: run.status === "blocked" ? "调试运行已创建，流程停在阻塞节点" : "调试运行已完成"
+    });
   });
 
   // App schema

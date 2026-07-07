@@ -1,12 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../lib/context.js";
-import { canAccessMemory, selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, notifyWorkflowUpdate } from "../lib/context.js";
+import { canAccessMemory, selectWorkflowTemplate, createWorkflowRun } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
 import { planMeetingAgentWorkflow, runMeetingAgent } from "../services/agent.js";
 import { getUserAiApiKey } from "../aiKeyStore.js";
-import { saveWorkflowRuns } from "../workflowStore.js";
-import { sortRunsByStartedAtDesc } from "../lib/context.js";
+import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
 
 export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post("/api/agent/meetings/:id/run", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -29,15 +28,24 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = ctx.workflowTemplates.find((t) => t.id === agentPlan.templateId) ?? selectWorkflowTemplate(meeting, ctx.workflowTemplates);
     if (!template) return reply.code(404).send({ message: "未找到可运行的工作流模板" });
 
-    const workflowRun = await createWorkflowRun(meeting, template);
-    ctx.workflowRuns = [workflowRun, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    await persistWorkflowMeetingWriteback(meeting, workflowRun, ctx);
-    const memories = await persistWorkflowMemories(meeting, workflowRun, ctx);
+    const workflowRun = await createWorkflowRun(meeting, template, await buildWorkflowExecutionOptions(request.user.id), ctx);
 
-    const agentRun = await runMeetingAgent({ meeting, plan: agentPlan, modelApiKey, selectedTemplate: template, executedRun: workflowRun, templates: ctx.workflowTemplates, runs: ctx.workflowRuns.filter((r) => r.meetingId === meeting.id), memories: accessibleMemories });
+    const agentRun = await runMeetingAgent({
+      meeting,
+      plan: agentPlan,
+      modelApiKey,
+      selectedTemplate: template,
+      executedRun: workflowRun,
+      templates: ctx.workflowTemplates,
+      runs: ctx.workflowRuns.filter((r) => r.meetingId === meeting.id),
+      memories: accessibleMemories
+    });
 
-    notifyWorkflowUpdate(ctx, workflowRun);
-    return { agentRun, workflowRun, memoryCount: memories.length, message: workflowRun.status === "blocked" ? "Agent 已运行工作流，但需要人工处理阻塞节点" : "Agent 已运行工作流" };
+    return {
+      agentRun,
+      workflowRun,
+      memoryCount: 0,
+      message: workflowRun.status === "blocked" ? "Agent 已运行工作流，但需要人工处理阻塞节点" : "Agent 已运行工作流"
+    };
   });
 }

@@ -12,6 +12,7 @@ import {
   buildMeetingContext,
   buildNodeAgentPrompt,
   callLLM,
+  callLLMWithStructuredOutput,
   extractConfigValues,
   isLLMAvailable
 } from "./llm.js";
@@ -34,6 +35,19 @@ import {
 } from "./structuredOutput.js";
 import { syncGoogleCalendarEvent } from "./googleCalendar.js";
 import { syncFeishuCalendarEvent } from "./feishuCalendar.js";
+import { resolvePublishedNodeRuntime } from "./nodeAgentRuntime.js";
+
+export type WorkflowExecutionOptions = {
+  apiKey?: string;
+  userId?: string;
+};
+
+export type WorkflowExecutionHooks = {
+  runId?: string;
+  resumeFrom?: ProductWorkflowRun;
+  isCancelled?: () => boolean;
+  onProgress?: (run: ProductWorkflowRun) => void | Promise<void>;
+};
 
 // ── SIMPLE CONDITION EVALUATOR ──
 
@@ -320,9 +334,11 @@ function applyNodeOutputSchema(node: ProductWorkflowNode, meeting: MeetingRecord
   }
 
   const rawStructuredOutput =
-    typeof outputPayload.llmContent === "string"
-      ? extractJsonObject(outputPayload.llmContent)
-      : null;
+    outputPayload.structuredOutput && typeof outputPayload.structuredOutput === "object" && !Array.isArray(outputPayload.structuredOutput)
+      ? (outputPayload.structuredOutput as Record<string, unknown>)
+      : typeof outputPayload.llmContent === "string"
+        ? extractJsonObject(outputPayload.llmContent)
+        : null;
 
   if (
     rawStructuredOutput === null &&
@@ -364,7 +380,8 @@ function shouldRunAgentNode(node: ProductWorkflowNode) {
 async function executeAgentNode(
   node: ProductWorkflowNode,
   meeting: MeetingRecord,
-  inputPayload: RuntimePayload
+  inputPayload: RuntimePayload,
+  options?: WorkflowExecutionOptions
 ): Promise<RuntimePayload> {
   const config = extractConfigValues(node);
   const meetingCtx = buildMeetingContext(meeting);
@@ -381,13 +398,41 @@ async function executeAgentNode(
   const model = node.agentPromptConfig?.model ?? config["model"] ?? "claude-sonnet-4";
   const temperature = node.agentPromptConfig?.temperature ?? config["temperature"] ?? 0.5;
 
-  if (isLLMAvailable()) {
+  if (isLLMAvailable(options?.apiKey)) {
+    if (outputSchema.length > 0) {
+      try {
+        const result = await callLLMWithStructuredOutput({
+          model,
+          prompt,
+          systemPrompt: renderedAgentPrompt?.systemPrompt || undefined,
+          temperature,
+          maxTokens: node.agentPromptConfig?.maxTokens,
+          apiKey: options?.apiKey,
+          outputSchema
+        });
+
+        return {
+          llmContent: result.content,
+          llmModel: result.model,
+          llmPrompt: prompt,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          agentRuntime: "llm",
+          responseFormat: "json_schema_native",
+          structuredOutput: result.structuredOutput
+        };
+      } catch {
+        // Fall back to prompt-guided JSON when native schema is unavailable.
+      }
+    }
+
     const result = await callLLM({
       model,
       prompt,
       systemPrompt: systemPrompt || undefined,
       temperature,
-      maxTokens: node.agentPromptConfig?.maxTokens
+      maxTokens: node.agentPromptConfig?.maxTokens,
+      apiKey: options?.apiKey
     });
 
     return {
@@ -568,7 +613,8 @@ function buildExecutionPlan(template: ProductWorkflowTemplate): { plan: Executio
 async function executeNodeByKind(
   node: ProductWorkflowNode,
   meeting: MeetingRecord,
-  inputs?: Record<string, unknown>
+  inputs?: Record<string, unknown>,
+  options?: WorkflowExecutionOptions
 ): Promise<ProductNodeRun> {
   const startedAt = new Date();
 
@@ -586,7 +632,7 @@ async function executeNodeByKind(
         break;
 
       case "ai": {
-        outputPayload = await executeAgentNode(node, meeting, inputPayload);
+        outputPayload = await executeAgentNode(node, meeting, inputPayload, options);
         break;
       }
 
@@ -603,7 +649,7 @@ async function executeNodeByKind(
         };
 
         if (shouldRunAgentNode(node) && node.agentPromptConfig) {
-          const agentOutput = await executeAgentNode(node, meeting, enrichedInput);
+          const agentOutput = await executeAgentNode(node, meeting, enrichedInput, options);
           outputPayload = { ...retrieval, ...agentOutput };
         } else {
           outputPayload = retrieval;
@@ -613,7 +659,7 @@ async function executeNodeByKind(
 
       case "decision":
         if (shouldRunAgentNode(node) && node.agentPromptConfig) {
-          outputPayload = await executeAgentNode(node, meeting, inputPayload);
+          outputPayload = await executeAgentNode(node, meeting, inputPayload, options);
         } else {
           outputPayload = {
             routeDecision:
@@ -654,23 +700,24 @@ async function executeNodeByKind(
 async function executeNodeByExecutor(
   node: ProductWorkflowNode,
   meeting: MeetingRecord,
-  inputs?: Record<string, unknown>
+  inputs?: Record<string, unknown>,
+  options?: WorkflowExecutionOptions
 ): Promise<ProductNodeRun> {
-  const executor = node.executor;
+  const { node: runtimeNode, publishedVersion } = resolvePublishedNodeRuntime(node);
+  const executor = runtimeNode.executor ?? node.executor;
   const startedAt = new Date();
-  const currentVersion = node.agentVersions?.find((version) => version.status === "published") ?? node.agentVersions?.[0];
 
   if (executor?.type === "manual") {
     return {
       nodeId: node.id,
       status: "blocked",
       startedAt: startedAt.toISOString(),
-      inputPayload: buildNodeInputPayload(node, meeting, inputs),
-      errorMessage: `${node.title} 等待人工处理`
+      inputPayload: buildNodeInputPayload(runtimeNode, meeting, inputs),
+      errorMessage: `${runtimeNode.title} 等待人工处理`
     };
   }
 
-  const result = await executeNodeByKind(node, meeting, inputs);
+  const result = await executeNodeByKind(runtimeNode, meeting, inputs, options);
 
   if (result.status !== "success") {
     return result;
@@ -683,9 +730,9 @@ async function executeNodeByExecutor(
       executorApplicationId: executor?.applicationId ?? "",
       executorRuntime: executor?.runtime ?? node.kind,
       executorType: executor?.type ?? "system",
-      agentVersionId: currentVersion?.id ?? "",
-      agentVersion: currentVersion?.version ?? "",
-      agentVersionStatus: currentVersion?.status ?? ""
+      agentVersionId: publishedVersion?.id ?? "",
+      agentVersion: publishedVersion?.version ?? "",
+      agentVersionStatus: publishedVersion?.status ?? ""
     }
   };
 }
@@ -704,7 +751,8 @@ async function executeNode(
   nodeInfo: ExecutionNode,
   meeting: MeetingRecord,
   retryConfig: { maxRetries: number; retryDelayMs: number },
-  inputs?: Record<string, unknown>
+  inputs?: Record<string, unknown>,
+  options?: WorkflowExecutionOptions
 ): Promise<ProductNodeRun> {
   const { node } = nodeInfo;
 
@@ -725,7 +773,7 @@ async function executeNode(
       await new Promise((resolve) => setTimeout(resolve, retryConfig.retryDelayMs));
     }
 
-    const result = await executeNodeByExecutor(node, meeting, inputs);
+    const result = await executeNodeByExecutor(node, meeting, inputs, options);
     if (result.status === "success") {
       return result;
     }
@@ -742,28 +790,164 @@ async function executeNode(
   };
 }
 
+function buildWorkflowConfigSnapshot(template: ProductWorkflowTemplate) {
+  return template.nodes.map((node) => ({
+    nodeId: node.id,
+    nodeTitle: node.title,
+    configFields: node.configFields.map((field) => ({ ...field }))
+  }));
+}
+
+function buildNodeRunsSnapshot(
+  plan: ExecutionNode[],
+  nodeResults: Map<string, ProductNodeRun>,
+  currentWave: number | null
+): ProductNodeRun[] {
+  return plan.map((entry) => {
+    const existing = nodeResults.get(entry.node.id);
+    if (existing) {
+      return existing;
+    }
+
+    if (currentWave !== null && entry.wave === currentWave) {
+      return { nodeId: entry.node.id, status: "running" };
+    }
+
+    if (currentWave !== null && entry.wave > currentWave) {
+      return { nodeId: entry.node.id, status: "pending" };
+    }
+
+    return { nodeId: entry.node.id, status: "pending" };
+  });
+}
+
+function assembleWorkflowRun(params: {
+  runId: string;
+  meeting: MeetingRecord;
+  template: ProductWorkflowTemplate;
+  startedAt: Date;
+  status: ProductWorkflowRun["status"];
+  nodeResults: Map<string, ProductNodeRun>;
+  plan: ExecutionNode[];
+  logs: ProductRunLog[];
+  runtimeStore: Record<string, unknown>;
+  currentWave?: number | null;
+  endedAt?: Date;
+}): ProductWorkflowRun {
+  const allRuns = buildNodeRunsSnapshot(params.plan, params.nodeResults, params.currentWave ?? null);
+  const endedAt = params.endedAt ?? new Date();
+  const durationSeconds = Math.max(1, Math.round((endedAt.getTime() - params.startedAt.getTime()) / 1000));
+
+  return {
+    id: params.runId,
+    templateId: params.template.id,
+    meetingId: params.meeting.id,
+    name: `${params.meeting.title} / ${params.template.name}`,
+    status: params.status,
+    durationSeconds,
+    startedAt: params.startedAt.toISOString(),
+    endedAt: params.status === "running" ? undefined : endedAt.toISOString(),
+    configSnapshot: buildWorkflowConfigSnapshot(params.template),
+    nodeRuns: allRuns,
+    logs: params.logs,
+    runtimeSnapshot: params.runtimeStore,
+    usage: collectWorkflowRunUsage(allRuns)
+  };
+}
+
+export function buildInitialWorkflowRun(
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  runId: string
+): ProductWorkflowRun {
+  const startedAt = new Date();
+  const { plan } = buildExecutionPlan(template);
+
+  return assembleWorkflowRun({
+    runId,
+    meeting,
+    template,
+    startedAt,
+    status: "running",
+    nodeResults: new Map(),
+    plan,
+    logs: [
+      {
+        id: `log-${Date.now()}-start`,
+        time: logTime(startedAt),
+        level: "info",
+        message: `流程 "${template.name}" 已启动`
+      }
+    ],
+    runtimeStore: createWorkflowRuntimeStore(meeting),
+    currentWave: 0
+  });
+}
+
+function seedResumeState(
+  resumeFrom: ProductWorkflowRun,
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  plan: ExecutionNode[]
+) {
+  const nodeResults = new Map<string, ProductNodeRun>();
+  const completedIds = new Set(
+    resumeFrom.nodeRuns
+      .filter((nodeRun) => nodeRun.status === "success" || nodeRun.status === "skipped")
+      .map((nodeRun) => nodeRun.nodeId)
+  );
+
+  for (const nodeRun of resumeFrom.nodeRuns) {
+    if (completedIds.has(nodeRun.nodeId)) {
+      nodeResults.set(nodeRun.nodeId, nodeRun);
+    }
+  }
+
+  const resumeWave = plan.find((entry) => !completedIds.has(entry.node.id))?.wave ?? 0;
+  const runtimeStore = restoreWorkflowRuntimeStore(meeting, resumeFrom.runtimeSnapshot);
+  hydrateRuntimeStoreFromCompletedNodes(template, [...nodeResults.values()], runtimeStore);
+
+  return {
+    nodeResults,
+    resumeWave,
+    logs: [...resumeFrom.logs],
+    startedAt: new Date(resumeFrom.startedAt),
+    runtimeStore
+  };
+}
+
 // ── MAIN EXECUTOR ──
 
 export async function executeWorkflowRun(
   meeting: MeetingRecord,
   template: ProductWorkflowTemplate,
-  retryConfig?: { maxRetries?: number; retryDelayMs?: number }
+  retryConfig?: { maxRetries?: number; retryDelayMs?: number },
+  options?: WorkflowExecutionOptions,
+  hooks?: WorkflowExecutionHooks
 ): Promise<ProductWorkflowRun> {
-  const startedAt = new Date();
-  const logs: ProductRunLog[] = [];
-  const nodeResults = new Map<string, ProductNodeRun>();
-  const runtimeStore = createWorkflowRuntimeStore(meeting);
+  const runId = hooks?.runId ?? `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const maxRetries = retryConfig?.maxRetries ?? 2;
   const retryDelayMs = retryConfig?.retryDelayMs ?? 1000;
-
   const { plan, hasCycle } = buildExecutionPlan(template);
 
-  logs.push({
-    id: `log-${Date.now()}-start`,
-    time: logTime(startedAt),
-    level: "info",
-    message: `流程 "${template.name}" 已启动`
-  });
+  const resumeState = hooks?.resumeFrom
+    ? seedResumeState(hooks.resumeFrom, meeting, template, plan)
+    : null;
+
+  const startedAt = resumeState?.startedAt ?? new Date();
+  const logs: ProductRunLog[] = resumeState?.logs ?? [];
+  const nodeResults = resumeState?.nodeResults ?? new Map<string, ProductNodeRun>();
+  const runtimeStore = resumeState?.runtimeStore ?? createWorkflowRuntimeStore(meeting);
+  const startWave = resumeState?.resumeWave ?? 0;
+
+  if (!resumeState) {
+    logs.push({
+      id: `log-${Date.now()}-start`,
+      time: logTime(startedAt),
+      level: "info",
+      message: `流程 "${template.name}" 已启动`
+    });
+  }
 
   if (hasCycle) {
     logs.push({
@@ -774,16 +958,70 @@ export async function executeWorkflowRun(
     });
   }
 
+  const emitProgress = async (status: ProductWorkflowRun["status"], currentWave: number | null, endedAt?: Date) => {
+    if (!hooks?.onProgress) {
+      return;
+    }
+
+    await hooks.onProgress(
+      assembleWorkflowRun({
+        runId,
+        meeting,
+        template,
+        startedAt,
+        status,
+        nodeResults,
+        plan,
+        logs,
+        runtimeStore,
+        currentWave,
+        endedAt
+      })
+    );
+  };
+
   // Execute by waves
   const maxWave = Math.max(...plan.map((n) => n.wave), 0);
 
-  for (let wave = 0; wave <= maxWave; wave++) {
-    const waveNodes = plan.filter((n) => n.wave === wave);
+  for (let wave = startWave; wave <= maxWave; wave++) {
+    if (hooks?.isCancelled?.()) {
+      logs.push({
+        id: `log-${Date.now()}-cancel`,
+        time: logTime(new Date()),
+        level: "warning",
+        message: "流程已被用户取消"
+      });
 
+      const cancelledRun = assembleWorkflowRun({
+        runId,
+        meeting,
+        template,
+        startedAt,
+        status: "failed",
+        nodeResults,
+        plan,
+        logs,
+        runtimeStore,
+        currentWave: null,
+        endedAt: new Date()
+      });
+
+      await emitProgress("failed", null, new Date());
+      return cancelledRun;
+    }
+
+    const waveNodes = plan.filter((n) => n.wave === wave);
     if (waveNodes.length === 0) continue;
+
+    await emitProgress("running", wave);
 
     const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults, runtimeStore);
     const wavePromises = waveNodes.map(async (nodeInfo) => {
+      const existing = nodeResults.get(nodeInfo.node.id);
+      if (existing && (existing.status === "success" || existing.status === "skipped")) {
+        return { nodeId: nodeInfo.node.id, result: existing };
+      }
+
       // Check edge conditions for incoming edges
       const incomingEdges = template.edges.filter((e) => e.target === nodeInfo.node.id);
       const routeLabel = incomingEdges
@@ -825,7 +1063,7 @@ export async function executeWorkflowRun(
         return { nodeId: nodeInfo.node.id, result: skippedRun };
       }
 
-      const result = await executeNode(nodeInfo, meeting, { maxRetries, retryDelayMs }, runtimeContext);
+      const result = await executeNode(nodeInfo, meeting, { maxRetries, retryDelayMs }, runtimeContext, options);
 
       if (result.status === "success") {
         logs.push({
@@ -869,50 +1107,61 @@ export async function executeWorkflowRun(
 
       nodeResults.set(nodeId, result);
     }
+
+    await emitProgress("running", wave + 1 <= maxWave ? wave + 1 : null);
   }
 
   // Determine overall status
-  const allRuns = [...nodeResults.values()];
+  const allRuns = buildNodeRunsSnapshot(plan, nodeResults, null);
   const hasFailed = allRuns.some((r) => r.status === "failed");
   const hasBlocked = allRuns.some((r) => r.status === "blocked");
   const status = hasFailed ? "failed" : hasBlocked ? "blocked" : "completed";
-
   const endedAt = new Date();
-  const durationSeconds = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
-  const usage = collectWorkflowRunUsage(allRuns);
 
-  return {
-    id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    templateId: template.id,
-    meetingId: meeting.id,
-    name: `${meeting.title} / ${template.name}`,
+  const finalRun = assembleWorkflowRun({
+    runId,
+    meeting,
+    template,
+    startedAt,
     status,
-    durationSeconds,
-    startedAt: startedAt.toISOString(),
-    endedAt: status === "completed" || status === "failed" ? endedAt.toISOString() : undefined,
-    configSnapshot: template.nodes.map((n) => ({
-      nodeId: n.id,
-      nodeTitle: n.title,
-      configFields: n.configFields.map((f) => ({ ...f }))
-    })),
-    nodeRuns: allRuns,
+    nodeResults,
+    plan,
     logs,
-    runtimeSnapshot: runtimeStore,
-    usage
-  };
+    runtimeStore,
+    currentWave: null,
+    endedAt
+  });
+
+  await emitProgress(status, null, endedAt);
+  return finalRun;
+}
+
+export async function resumeWorkflowRun(
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  retryConfig?: { maxRetries?: number; retryDelayMs?: number },
+  options?: WorkflowExecutionOptions,
+  hooks?: WorkflowExecutionHooks
+): Promise<ProductWorkflowRun> {
+  if (!hooks?.resumeFrom) {
+    throw new Error("断点续跑需要传入 resumeFrom 运行记录");
+  }
+
+  return executeWorkflowRun(meeting, template, retryConfig, options, hooks);
 }
 
 export async function executeSingleNodeRun(
   meeting: MeetingRecord,
   template: ProductWorkflowTemplate,
   node: ProductWorkflowNode,
-  inputs?: Record<string, unknown>
+  inputs?: Record<string, unknown>,
+  options?: WorkflowExecutionOptions
 ): Promise<ProductWorkflowRun> {
   const startedAt = new Date();
   const runtimeStore = createWorkflowRuntimeStore(meeting);
   const runtimeContext = buildWorkflowRuntimeContext(meeting, new Map(), runtimeStore);
   const mergedInputs = { ...runtimeContext, ...inputs };
-  const result = await executeNodeByExecutor(node, meeting, mergedInputs);
+  const result = await executeNodeByExecutor(node, meeting, mergedInputs, options);
   const finalResult =
     result.status === "success" && result.outputPayload
       ? {
@@ -970,7 +1219,8 @@ export async function advanceWorkflowExecution(
   meeting: MeetingRecord,
   template: ProductWorkflowTemplate,
   resolutionNote: string,
-  _retryConfig?: { maxRetries?: number; retryDelayMs?: number }
+  _retryConfig?: { maxRetries?: number; retryDelayMs?: number },
+  options?: WorkflowExecutionOptions
 ): Promise<ProductWorkflowRun> {
   const now = new Date();
   const nextLogs = [...run.logs];
@@ -1029,7 +1279,7 @@ export async function advanceWorkflowExecution(
       const nodeInfo = pendingPlan[index]!;
       const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults, runtimeStore);
       const timestamp = new Date(now.getTime() + index * 1000);
-      const result = await executeNodeByExecutor(nodeInfo.node, meeting, runtimeContext);
+      const result = await executeNodeByExecutor(nodeInfo.node, meeting, runtimeContext, options);
       const nodeRunIndex = nextNodeRuns.findIndex((nodeRun) => nodeRun.nodeId === nodeInfo.node.id);
 
       if (nodeRunIndex < 0) {
