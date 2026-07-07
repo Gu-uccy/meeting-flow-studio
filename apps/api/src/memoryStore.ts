@@ -2,7 +2,8 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { meetingMemorySchema, type MeetingMemory } from "@meeting-flow/shared";
+import { meetingMemorySchema, type MeetingMemory, type MeetingRecord } from "@meeting-flow/shared";
+import { syncVectorKnowledgeIndex } from "./vectorStore.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(currentDir, "../data");
@@ -88,7 +89,7 @@ export async function loadMeetingMemories() {
   }
 }
 
-export async function saveMeetingMemories(memories: MeetingMemory[]) {
+export async function saveMeetingMemories(memories: MeetingMemory[], meetings: MeetingRecord[] = []) {
   const database = openDatabase();
 
   try {
@@ -96,4 +97,6 @@ export async function saveMeetingMemories(memories: MeetingMemory[]) {
   } finally {
     database.close();
   }
+
+  await syncVectorKnowledgeIndex(memories, meetings);
 }

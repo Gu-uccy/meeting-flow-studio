@@ -39,7 +39,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: AppContext) {
 
     const updated: MeetingMemory = { ...memory, content, kind: body.kind ?? memory.kind, visibility: body.visibility ?? memory.visibility, isPinned: typeof body.isPinned === "boolean" ? body.isPinned : memory.isPinned, updatedAt: new Date().toISOString() };
     ctx.meetingMemories = ctx.meetingMemories.map((m) => (m.id === id ? updated : m)).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    await saveMeetingMemories(ctx.meetingMemories);
+    await saveMeetingMemories(ctx.meetingMemories, ctx.meetings);
     return { memory: updated, message: "会议记忆已更新" };
   });
 
@@ -49,7 +49,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!memory) return reply.code(404).send({ message: "未找到对应会议记忆" });
     if (!canManageMemory(memory, request.user, ctx)) return reply.code(403).send({ message: "当前账号无权删除这条会议记忆" });
     ctx.meetingMemories = ctx.meetingMemories.filter((m) => m.id !== id);
-    await saveMeetingMemories(ctx.meetingMemories);
+    await saveMeetingMemories(ctx.meetingMemories, ctx.meetings);
     return { message: "会议记忆已删除" };
   });
 }

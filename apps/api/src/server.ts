@@ -7,6 +7,7 @@ import type { MeetingRecord, MeetingMemory, ProductWorkflowRun, ProductWorkflowT
 import { ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 import { loadMeetings } from "./meetingStore.js";
 import { loadMeetingMemories } from "./memoryStore.js";
+import { syncVectorKnowledgeIndex } from "./vectorStore.js";
 import { loadWorkflowRuns, loadWorkflowTemplates, saveWorkflowRuns } from "./workflowStore.js";
 import { loadUsers, migrateExistingMeetings } from "./userStore.js";
 import { createWorkflowRun, sortRunsByStartedAtDesc } from "./lib/context.js";
@@ -22,6 +23,7 @@ import { aiRoutes } from "./routes/ai.js";
 import { integrationRoutes } from "./routes/integrations.js";
 import { agentRoutes } from "./routes/agent.js";
 import { memoryRoutes } from "./routes/memories.js";
+import { knowledgeRoutes } from "./routes/knowledge.js";
 
 // ── Create server ──
 
@@ -117,6 +119,7 @@ const workflowTemplates: ProductWorkflowTemplate[] = (await loadWorkflowTemplate
 
 await loadUsers();
 await migrateExistingMeetings();
+await syncVectorKnowledgeIndex(meetingMemories, meetings);
 
 const wsClients = new Set<WebSocket>();
 
@@ -164,6 +167,7 @@ await app.register(async (subApp) => workflowRoutes(subApp, ctx));
 await app.register(async (subApp) => appRoutes(subApp, ctx));
 await app.register(async (subApp) => agentRoutes(subApp, ctx));
 await app.register(async (subApp) => memoryRoutes(subApp, ctx));
+await app.register(async (subApp) => knowledgeRoutes(subApp, ctx));
 await app.register(aiRoutes);
 await app.register(integrationRoutes);
 
