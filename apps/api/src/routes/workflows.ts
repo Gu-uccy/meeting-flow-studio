@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { buildAiApplicationsFromTemplates, ensureProductWorkflowNodeExecutors, buildNodeAgentApplicationId } from "@meeting-flow/shared";
 import type { AppContext } from "../lib/context.js";
 import type { ProductWorkflowTemplate, ProductWorkflowNodeExecutor, ProductWorkflowRun } from "@meeting-flow/shared";
-import { selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, sortRunsByStartedAtDesc, notifyWorkflowUpdate } from "../lib/context.js";
+import { selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, sortRunsByStartedAtDesc, notifyWorkflowUpdate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { saveWorkflowTemplates, saveWorkflowRuns } from "../workflowStore.js";
 import { advanceWorkflowExecution } from "../services/executor.js";
@@ -117,6 +117,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const run = await createWorkflowRun(meeting, template);
     ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, run, ctx);
     const memories = await persistWorkflowMemories(meeting, run, ctx);
 
     notifyWorkflowUpdate(ctx, run);
@@ -139,6 +140,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const advancedRun = await advanceWorkflowExecution(run, meeting, template, resolutionNote);
     ctx.workflowRuns = ctx.workflowRuns.map((r) => (r.id === id ? advancedRun : r)).sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, advancedRun, ctx);
     const memories = await persistWorkflowMemories(meeting, advancedRun, ctx);
     notifyWorkflowUpdate(ctx, advancedRun);
     return { run: advancedRun, memoryCount: memories.length, message: "阻塞节点已处理，流程已继续运行" };
@@ -157,6 +159,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const newRun = await createWorkflowRun(meeting, template);
     ctx.workflowRuns = [newRun, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, newRun, ctx);
     const memories = await persistWorkflowMemories(meeting, newRun, ctx);
     notifyWorkflowUpdate(ctx, newRun);
     return reply.code(201).send({ run: newRun, memoryCount: memories.length, message: "流程已重新启动" });

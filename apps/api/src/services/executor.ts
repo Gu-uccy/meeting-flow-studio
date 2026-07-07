@@ -20,14 +20,20 @@ import {
   applyNodeOutputMapping,
   buildMeetingPayload,
   buildWorkflowRuntimeContext,
+  collectWorkflowRunUsage,
   createWorkflowRuntimeStore,
-  getPathValue
+  getPathValue,
+  hydrateRuntimeStoreFromCompletedNodes,
+  restoreWorkflowRuntimeStore,
+  seedNodeResultsFromRuns
 } from "./runtimeMapping.js";
 import {
   buildStructuredOutputSchemaPrompt,
   extractJsonObject,
   validateStructuredOutput
 } from "./structuredOutput.js";
+import { syncGoogleCalendarEvent } from "./googleCalendar.js";
+import { syncFeishuCalendarEvent } from "./feishuCalendar.js";
 
 // ── SIMPLE CONDITION EVALUATOR ──
 
@@ -390,7 +396,8 @@ async function executeAgentNode(
       llmPrompt: prompt,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
-      agentRuntime: "llm"
+      agentRuntime: "llm",
+      responseFormat: outputSchema.length > 0 ? "json_schema" : "text"
     };
   }
 
@@ -409,35 +416,51 @@ async function executeToolPresetNode(
   inputPayload: RuntimePayload
 ): Promise<RuntimePayload> {
   const toolPreset = configValue(node, "toolPreset");
+  const userId = meeting.ownerUserId || "system";
 
   if (toolPreset === "google-calendar") {
-    return {
-      channel: "google-calendar",
-      meetingId: meeting.id,
-      syncStatus: "queued",
-      toolPreset,
-      toolResult: {
-        title: meeting.title,
-        startAt: meeting.startAt,
-        endAt: meeting.endAt
-      },
-      message: "已触发 Google 日历同步任务"
-    };
+    try {
+      const externalCalendar = await syncGoogleCalendarEvent(userId, meeting);
+      return {
+        channel: "google-calendar",
+        externalCalendar,
+        meetingId: meeting.id,
+        syncStatus: "success",
+        toolPreset,
+        toolResult: {
+          eventId: externalCalendar.eventId,
+          hangoutLink: externalCalendar.hangoutLink,
+          provider: externalCalendar.provider,
+          startAt: meeting.startAt,
+          title: meeting.title
+        },
+        message: externalCalendar.provider === "mock" ? "已生成模拟 Google 日历事件" : "已同步到 Google Calendar"
+      };
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "Google Calendar 同步失败");
+    }
   }
 
   if (toolPreset === "feishu-calendar") {
-    return {
-      channel: "feishu-calendar",
-      meetingId: meeting.id,
-      syncStatus: "queued",
-      toolPreset,
-      toolResult: {
-        title: meeting.title,
-        startAt: meeting.startAt,
-        endAt: meeting.endAt
-      },
-      message: "已触发飞书日历同步任务"
-    };
+    try {
+      const externalCalendar = await syncFeishuCalendarEvent(userId, meeting);
+      return {
+        channel: "feishu-calendar",
+        externalCalendar,
+        meetingId: meeting.id,
+        syncStatus: "success",
+        toolPreset,
+        toolResult: {
+          eventId: externalCalendar.eventId,
+          provider: externalCalendar.provider,
+          startAt: meeting.startAt,
+          title: meeting.title
+        },
+        message: externalCalendar.provider === "mock" ? "已生成模拟飞书日程" : "已同步到飞书日历"
+      };
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "飞书日历同步失败");
+    }
   }
 
   if (configValue(node, "toolUrl")) {
@@ -856,6 +879,7 @@ export async function executeWorkflowRun(
 
   const endedAt = new Date();
   const durationSeconds = Math.max(1, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000));
+  const usage = collectWorkflowRunUsage(allRuns);
 
   return {
     id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -872,7 +896,9 @@ export async function executeWorkflowRun(
       configFields: n.configFields.map((f) => ({ ...f }))
     })),
     nodeRuns: allRuns,
-    logs
+    logs,
+    runtimeSnapshot: runtimeStore,
+    usage
   };
 }
 
@@ -896,6 +922,7 @@ export async function executeSingleNodeRun(
       : result;
   const endedAt = new Date();
   const status = finalResult.status === "failed" ? "failed" : finalResult.status === "blocked" ? "blocked" : "completed";
+  const usage = collectWorkflowRunUsage([finalResult]);
 
   return {
     id: `run-node-${node.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -932,7 +959,9 @@ export async function executeSingleNodeRun(
             : finalResult.errorMessage ?? `${node.title} 单节点调试未完成`,
         nodeId: node.id
       }
-    ]
+    ],
+    runtimeSnapshot: runtimeStore,
+    usage
   };
 }
 
@@ -945,62 +974,104 @@ export async function advanceWorkflowExecution(
 ): Promise<ProductWorkflowRun> {
   const now = new Date();
   const nextLogs = [...run.logs];
-  const nextNodeRuns = run.nodeRuns.map((nodeRun) => {
-    if (nodeRun.status === "blocked") {
-      nextLogs.push({
-        id: `log-${Date.now()}-${nodeRun.nodeId}-resolved`,
-        time: logTime(now),
-        level: "success",
-        message: `人工处理完成：${resolutionNote}`,
-        nodeId: nodeRun.nodeId
-      });
+  const runtimeStore = restoreWorkflowRuntimeStore(meeting, run.runtimeSnapshot);
+  const nodeResults = run.runtimeSnapshot
+    ? seedNodeResultsFromRuns(run.nodeRuns)
+    : hydrateRuntimeStoreFromCompletedNodes(template, run.nodeRuns, runtimeStore);
 
-      return {
-        ...nodeRun,
-        status: "success" as const,
-        endedAt: now.toISOString(),
-        outputPayload: {
-          ...nodeRun.outputPayload,
-          manualResolution: true,
-          resolutionNote
-        },
-        errorMessage: undefined
-      };
+  const nextNodeRuns = run.nodeRuns.map((nodeRun) => {
+    if (nodeRun.status !== "blocked") {
+      return nodeRun;
     }
 
-    return nodeRun;
+    nextLogs.push({
+      id: `log-${Date.now()}-${nodeRun.nodeId}-resolved`,
+      time: logTime(now),
+      level: "success",
+      message: `人工处理完成：${resolutionNote}`,
+      nodeId: nodeRun.nodeId
+    });
+
+    const node = template.nodes.find((entry) => entry.id === nodeRun.nodeId);
+    const resolvedOutputPayload = {
+      ...(nodeRun.outputPayload ?? {}),
+      manualResolution: true,
+      resolutionNote
+    };
+    const resolvedRun: ProductNodeRun = {
+      ...nodeRun,
+      status: "success",
+      endedAt: now.toISOString(),
+      outputPayload: resolvedOutputPayload,
+      errorMessage: undefined
+    };
+
+    if (node && resolvedOutputPayload) {
+      const mapped = applyNodeOutputMapping(node, resolvedOutputPayload, runtimeStore);
+      const finalRun = { ...resolvedRun, outputPayload: mapped.outputPayload };
+      nodeResults.set(nodeRun.nodeId, finalRun);
+      return finalRun;
+    }
+
+    nodeResults.set(nodeRun.nodeId, resolvedRun);
+    return resolvedRun;
   });
 
-  // Execute remaining pending nodes
-  const pendingNodeIds = nextNodeRuns
-    .filter((r) => r.status === "pending")
-    .map((r) => r.nodeId);
+  const pendingNodeIds = new Set(
+    nextNodeRuns.filter((nodeRun) => nodeRun.status === "pending").map((nodeRun) => nodeRun.nodeId)
+  );
 
-  if (pendingNodeIds.length > 0) {
-    const pendingNodes = template.nodes.filter((n) => pendingNodeIds.includes(n.id));
+  if (pendingNodeIds.size > 0) {
+    const { plan } = buildExecutionPlan(template);
+    const pendingPlan = plan.filter((entry) => pendingNodeIds.has(entry.node.id));
 
-    for (let i = 0; i < pendingNodes.length; i++) {
-      const node = pendingNodes[i]!;
-      const timestamp = new Date(now.getTime() + i * 1000);
-      const result = await executeNodeByExecutor(node, meeting);
+    for (let index = 0; index < pendingPlan.length; index += 1) {
+      const nodeInfo = pendingPlan[index]!;
+      const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults, runtimeStore);
+      const timestamp = new Date(now.getTime() + index * 1000);
+      const result = await executeNodeByExecutor(nodeInfo.node, meeting, runtimeContext);
+      const nodeRunIndex = nextNodeRuns.findIndex((nodeRun) => nodeRun.nodeId === nodeInfo.node.id);
 
-      const nodeRunIndex = nextNodeRuns.findIndex((r) => r.nodeId === node.id);
-      if (nodeRunIndex >= 0) {
-        const resolvedRun: ProductNodeRun = {
-          ...result,
-          startedAt: result.startedAt ?? timestamp.toISOString(),
-          endedAt: result.endedAt ?? new Date(timestamp.getTime() + 1000).toISOString()
-        };
-        nextNodeRuns[nodeRunIndex] = resolvedRun;
+      if (nodeRunIndex < 0) {
+        continue;
+      }
 
+      let finalRun: ProductNodeRun = {
+        ...result,
+        startedAt: result.startedAt ?? timestamp.toISOString(),
+        endedAt: result.endedAt ?? new Date(timestamp.getTime() + 1000).toISOString()
+      };
+
+      if (result.status === "success" && result.outputPayload) {
+        const mapped = applyNodeOutputMapping(nodeInfo.node, result.outputPayload, runtimeStore);
+        finalRun = { ...finalRun, outputPayload: mapped.outputPayload };
+        nodeResults.set(nodeInfo.node.id, finalRun);
         nextLogs.push({
-          id: `log-${Date.now()}-${node.id}-continued`,
+          id: `log-${Date.now()}-${nodeInfo.node.id}-continued`,
           time: logTime(timestamp),
           level: "success",
-          message: `${node.title} 已继续完成`,
-          nodeId: node.id
+          message: `${nodeInfo.node.title} 已继续完成`,
+          nodeId: nodeInfo.node.id
+        });
+      } else if (result.status === "blocked") {
+        nextLogs.push({
+          id: `log-${Date.now()}-${nodeInfo.node.id}-blocked`,
+          time: logTime(timestamp),
+          level: "warning",
+          message: result.errorMessage ?? `${nodeInfo.node.title} 再次进入人工处理`,
+          nodeId: nodeInfo.node.id
+        });
+      } else if (result.status === "failed") {
+        nextLogs.push({
+          id: `log-${Date.now()}-${nodeInfo.node.id}-failed`,
+          time: logTime(timestamp),
+          level: "error",
+          message: result.errorMessage ?? `${nodeInfo.node.title} 执行失败`,
+          nodeId: nodeInfo.node.id
         });
       }
+
+      nextNodeRuns[nodeRunIndex] = finalRun;
     }
   }
 
@@ -1008,14 +1079,19 @@ export async function advanceWorkflowExecution(
     run.durationSeconds,
     Math.round((now.getTime() - new Date(run.startedAt).getTime()) / 1000)
   );
+  const hasFailed = nextNodeRuns.some((nodeRun) => nodeRun.status === "failed");
+  const hasBlocked = nextNodeRuns.some((nodeRun) => nodeRun.status === "blocked");
+  const status = hasFailed ? "failed" : hasBlocked ? "blocked" : "completed";
 
   return {
     ...run,
-    status: "completed",
+    status,
     durationSeconds,
-    endedAt: now.toISOString(),
+    endedAt: status === "completed" || status === "failed" ? now.toISOString() : undefined,
     nodeRuns: nextNodeRuns,
-    logs: nextLogs
+    logs: nextLogs,
+    runtimeSnapshot: runtimeStore,
+    usage: collectWorkflowRunUsage(nextNodeRuns)
   };
 }
 

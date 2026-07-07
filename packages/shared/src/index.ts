@@ -624,6 +624,12 @@ export type ProductNodeRun = {
   errorMessage?: string;
 };
 
+export type ProductWorkflowRunUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
 export type ProductWorkflowRun = {
   id: string;
   templateId: string;
@@ -640,6 +646,8 @@ export type ProductWorkflowRun = {
   }>;
   nodeRuns: ProductNodeRun[];
   logs: ProductRunLog[];
+  runtimeSnapshot?: Record<string, unknown>;
+  usage?: ProductWorkflowRunUsage;
 };
 
 export type AiApplicationMode = "workflow" | "chatflow" | "agent";

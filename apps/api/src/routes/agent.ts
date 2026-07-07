@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../lib/context.js";
-import { canAccessMemory, selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, notifyWorkflowUpdate } from "../lib/context.js";
+import { canAccessMemory, selectWorkflowTemplate, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, notifyWorkflowUpdate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
 import { planMeetingAgentWorkflow, runMeetingAgent } from "../services/agent.js";
@@ -32,6 +32,7 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
     const workflowRun = await createWorkflowRun(meeting, template);
     ctx.workflowRuns = [workflowRun, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, workflowRun, ctx);
     const memories = await persistWorkflowMemories(meeting, workflowRun, ctx);
 
     const agentRun = await runMeetingAgent({ meeting, plan: agentPlan, modelApiKey, selectedTemplate: template, executedRun: workflowRun, templates: ctx.workflowTemplates, runs: ctx.workflowRuns.filter((r) => r.meetingId === meeting.id), memories: accessibleMemories });

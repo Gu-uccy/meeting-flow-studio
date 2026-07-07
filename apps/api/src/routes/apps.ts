@@ -4,7 +4,7 @@ import type { AppContext } from "../lib/context.js";
 import type { AiApplicationVersion, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import {
   normalizeDebugInputs, validateApplicationInputs, getNodeApplicationBinding,
-  buildNodeAgentVersion, createWorkflowRun, persistWorkflowMemories, notifyWorkflowUpdate,
+  buildNodeAgentVersion, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, notifyWorkflowUpdate,
 } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
@@ -117,6 +117,7 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
     const run = node ? await executeSingleNodeRun(meeting, template, node, debugInputs) : await createWorkflowRun(meeting, template);
     ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
     await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, run, ctx);
     const memories = await persistWorkflowMemories(meeting, run, ctx);
 
     notifyWorkflowUpdate(ctx, run);

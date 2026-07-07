@@ -13,6 +13,7 @@ import {
   type AiApplicationVersion,
   updateMeetingStatusSchema,
 } from "@meeting-flow/shared";
+import { applyMeetingRuntimeWriteback } from "../services/runtimeMapping.js";
 import { buildPermissions } from "../services/auth.js";
 import { saveMeetings } from "../meetingStore.js";
 import { saveMeetingMemories } from "../memoryStore.js";
@@ -263,9 +264,39 @@ export function buildMeetingWriteback(meeting: MeetingRecord, run: ProductWorkfl
 
 export async function persistWorkflowMeetingWriteback(meeting: MeetingRecord, run: ProductWorkflowRun, ctx: AppContext) {
   if (run.status !== "completed") return meeting;
-  const updated = buildMeetingWriteback(meeting, run);
-  if (!updated) return meeting;
-  ctx.meetings = ctx.meetings.map((m) => (m.id === meeting.id ? updated : m));
+
+  let updated = meeting;
+
+  if (run.runtimeSnapshot) {
+    const fromRuntime = applyMeetingRuntimeWriteback(updated, run.runtimeSnapshot);
+    if (fromRuntime) {
+      updated = fromRuntime;
+    }
+  }
+
+  const fromStructured = buildMeetingWriteback(updated, run);
+  if (fromStructured) {
+    updated = fromStructured;
+  }
+
+  for (const nodeRun of run.nodeRuns) {
+    const externalCalendar = nodeRun.outputPayload?.externalCalendar;
+    if (externalCalendar && typeof externalCalendar === "object" && !Array.isArray(externalCalendar)) {
+      const calendar = externalCalendar as MeetingRecord["externalCalendar"];
+      updated = {
+        ...updated,
+        externalCalendar: calendar,
+        meetingLink: calendar?.hangoutLink || updated.meetingLink,
+        updatedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  if (updated === meeting) {
+    return meeting;
+  }
+
+  ctx.meetings = ctx.meetings.map((item) => (item.id === meeting.id ? updated : item));
   await saveMeetings(ctx.meetings);
   return updated;
 }

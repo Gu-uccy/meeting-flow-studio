@@ -3,7 +3,7 @@ import type { AppContext } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { getEmbeddingProvider } from "../services/embeddings.js";
 import { retrieveMeetingKnowledge } from "../services/knowledgeRetrieval.js";
-import { getVectorIndexStats, searchVectorKnowledge } from "../vectorStore.js";
+import { getVectorIndexStats, searchVectorKnowledge, syncVectorKnowledgeIndex } from "../vectorStore.js";
 
 export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/api/knowledge/search", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -70,5 +70,10 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/api/knowledge/index", { preHandler: [authenticate] }, async () => {
     const stats = await getVectorIndexStats();
     return { index: stats };
+  });
+
+  app.post("/api/knowledge/index/rebuild", { preHandler: [authenticate] }, async () => {
+    const index = await syncVectorKnowledgeIndex(ctx.meetingMemories, ctx.meetings);
+    return { index, message: "向量索引已重建" };
   });
 }

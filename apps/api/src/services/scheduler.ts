@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { MeetingRecord, ProductWorkflowTemplate } from "@meeting-flow/shared";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(currentDir, "../../data");
+const dataDir = path.resolve(currentDir, "../data");
 const databaseFile = path.join(dataDir, "meetings.db");
 
 export type WorkflowSchedule = {

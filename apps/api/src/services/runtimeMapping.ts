@@ -1,4 +1,4 @@
-import type { MeetingRecord, ProductWorkflowNode, ProductNodeRun } from "@meeting-flow/shared";
+import type { MeetingRecord, ProductWorkflowNode, ProductNodeRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
 
 type RuntimePayload = Record<string, unknown>;
 
@@ -25,6 +25,50 @@ export function createWorkflowRuntimeStore(meeting: MeetingRecord): Record<strin
     meeting: buildMeetingPayload(meeting),
     node: {}
   };
+}
+
+export function restoreWorkflowRuntimeStore(
+  meeting: MeetingRecord,
+  snapshot?: Record<string, unknown>
+): Record<string, unknown> {
+  const base = createWorkflowRuntimeStore(meeting);
+  if (!snapshot) {
+    return base;
+  }
+
+  return deepMergeRecords(base, snapshot);
+}
+
+export function seedNodeResultsFromRuns(nodeRuns: ProductNodeRun[]) {
+  return new Map(
+    nodeRuns
+      .filter((nodeRun) => nodeRun.status === "success")
+      .map((nodeRun) => [nodeRun.nodeId, nodeRun] as const)
+  );
+}
+
+export function hydrateRuntimeStoreFromCompletedNodes(
+  template: ProductWorkflowTemplate,
+  nodeRuns: ProductNodeRun[],
+  runtimeStore: Record<string, unknown>
+) {
+  const nodeResults = new Map<string, ProductNodeRun>();
+
+  for (const nodeRun of nodeRuns) {
+    if (nodeRun.status !== "success" || !nodeRun.outputPayload) {
+      continue;
+    }
+
+    const node = template.nodes.find((entry) => entry.id === nodeRun.nodeId);
+    if (!node) {
+      continue;
+    }
+
+    const mapped = applyNodeOutputMapping(node, nodeRun.outputPayload, runtimeStore);
+    nodeResults.set(nodeRun.nodeId, { ...nodeRun, outputPayload: mapped.outputPayload });
+  }
+
+  return nodeResults;
 }
 
 export function getPathValue(source: Record<string, unknown>, path: string): unknown {
@@ -131,4 +175,94 @@ export function applyNodeOutputMapping(
       outputMappingApplied: applied
     }
   };
+}
+
+const MEETING_SCALAR_WRITEBACK_FIELDS = [
+  "title",
+  "meetingGoal",
+  "priority",
+  "type",
+  "notes",
+  "minutes",
+  "meetingLink",
+  "location",
+  "host",
+  "owner",
+  "description"
+] as const;
+
+export function applyMeetingRuntimeWriteback(meeting: MeetingRecord, runtimeStore: Record<string, unknown>): MeetingRecord | null {
+  const meetingBucket = runtimeStore.meeting;
+  if (!meetingBucket || typeof meetingBucket !== "object" || Array.isArray(meetingBucket)) {
+    return null;
+  }
+
+  const patch = meetingBucket as Record<string, unknown>;
+  let nextMeeting = meeting;
+  let changed = false;
+
+  for (const field of MEETING_SCALAR_WRITEBACK_FIELDS) {
+    const value = patch[field];
+    if (value === undefined || value === null) {
+      continue;
+    }
+
+    const normalized = typeof value === "string" ? value.trim() : String(value);
+    if (!normalized) {
+      continue;
+    }
+
+    const current = nextMeeting[field];
+    if (String(current ?? "") === normalized) {
+      continue;
+    }
+
+    nextMeeting = { ...nextMeeting, [field]: normalized };
+    changed = true;
+  }
+
+  if (Array.isArray(patch.participants) && patch.participants.length > 0) {
+    const names = patch.participants.map((item) => String(item).trim()).filter(Boolean);
+    if (names.length > 0) {
+      const currentNames = nextMeeting.participants.map((participant) => participant.name).join("|");
+      const nextNames = names.join("|");
+      if (currentNames !== nextNames) {
+        nextMeeting = {
+          ...nextMeeting,
+          participants: names.map((name, index) => ({
+            id: nextMeeting.participants[index]?.id ?? `participant-${Date.now()}-${index}`,
+            name,
+            role: nextMeeting.participants[index]?.role ?? "attendee",
+            status: nextMeeting.participants[index]?.status ?? "pending"
+          })),
+          attendeeCount: names.length
+        };
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  return { ...nextMeeting, updatedAt: new Date().toISOString() };
+}
+
+export function collectWorkflowRunUsage(nodeRuns: ProductNodeRun[]) {
+  return nodeRuns.reduce(
+    (usage, nodeRun) => {
+      const inputTokens = Number(nodeRun.outputPayload?.inputTokens ?? 0);
+      const outputTokens = Number(nodeRun.outputPayload?.outputTokens ?? 0);
+      return {
+        inputTokens: usage.inputTokens + (Number.isFinite(inputTokens) ? inputTokens : 0),
+        outputTokens: usage.outputTokens + (Number.isFinite(outputTokens) ? outputTokens : 0),
+        totalTokens:
+          usage.totalTokens +
+          (Number.isFinite(inputTokens) ? inputTokens : 0) +
+          (Number.isFinite(outputTokens) ? outputTokens : 0)
+      };
+    },
+    { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+  );
 }
