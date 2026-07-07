@@ -113,7 +113,7 @@ async function testDetailTabs(page) {
 
 async function testExtensionTabs(page) {
   await switchMode(page, "拓展工具", "is-more");
-  for (const tab of ["工作流 Agent", "日历同步"]) {
+  for (const tab of ["工作流 Agent", "日历同步", "定时任务", "能力模型"]) {
     const tabButton = page.locator('.workflow-side-tabs[aria-label="拓展工具视图"] button', { hasText: tab });
     if (await tabButton.isVisible().catch(() => false)) {
       await tabButton.click();
@@ -145,6 +145,39 @@ async function testRunView(page) {
   }
 }
 
+async function testWorkflowRunLifecycle(page) {
+  await switchMode(page, "运行视图", "is-simple");
+  const startButton = page.getByRole("button", { name: "启动流程" });
+  if (!(await startButton.isVisible().catch(() => false))) {
+    fail("启动流程并等待完成", "启动按钮不可见");
+    return;
+  }
+
+  await startButton.click();
+
+  const terminalStatus = await page.waitForFunction(async () => {
+    const response = await fetch("/api/workflows/runs", {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("meeting_flow_token") ?? ""}`
+      }
+    });
+    if (!response.ok) {
+      return false;
+    }
+
+    const data = await response.json();
+    const latestRun = Array.isArray(data.items) ? data.items[0] : null;
+    return latestRun && latestRun.status !== "running" ? latestRun.status : false;
+  }, { timeout: 20000 });
+
+  const status = await terminalStatus.jsonValue();
+  if (["completed", "blocked", "failed"].includes(String(status))) {
+    pass("启动流程并等待完成", `最终状态 ${status}`);
+  } else {
+    fail("启动流程并等待完成", `意外状态 ${status}`);
+  }
+}
+
 async function testNavViews(page) {
   await page.getByRole("button", { name: "节点智能体管理" }).click();
   await page.waitForTimeout(600);
@@ -163,6 +196,7 @@ try {
   if (!(await selectMeeting(page))) throw new Error("选择会议失败");
 
   await testRunView(page);
+  await testWorkflowRunLifecycle(page);
   await testEditToolbar(page);
   await testDetailTabs(page);
   await testExtensionTabs(page);

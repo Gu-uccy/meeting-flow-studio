@@ -259,8 +259,7 @@ Meeting Flow Studio｜会议流程编排工作台
 
 ## 后续规划
 
-- 增加 API 集成测试，覆盖认证、权限、会议 CRUD、工作流运行和日历同步。
-- 为流程画布和关键表单补充组件测试或端到端测试。
 - 将 SQLite store 抽象为 repository 接口，方便迁移到 PostgreSQL 等生产数据库。
-- 为工作流节点执行器补充更严格的输入输出 schema、错误分类和重试策略。
-- 增加在线 Demo、工作台截图和部署文档，让项目更适合作品集展示。
+- 分布式 Job 队列（Redis/Bull）与多实例 Cron 协调。
+- 知识库文档上传、模板 CRUD/版本、插件化 Tool 注册。
+- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 了解当前单实例部署方式。
