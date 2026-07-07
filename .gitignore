@@ -15,12 +15,6 @@ apps/api/data/*.db-*
 apps/api/src/data/
 __pycache__/
 apps/web/scripts/__pycache__/
-apps/web/scripts/*-audit.py
-apps/web/scripts/compare-css*.py
-apps/web/scripts/consolidate-css.py
-apps/web/scripts/find-missing-css.py
-apps/web/scripts/list-unused-css.py
-apps/web/scripts/purge-unused-css.py
-apps/web/scripts/restore-critical-css.py
+apps/web/scripts/*.py
 apps/web/scripts/capture-workbench-screenshots.mjs
 output/
