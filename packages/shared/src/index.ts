@@ -601,6 +601,23 @@ export type ProductWorkflowTemplate = {
   nodes: ProductWorkflowNode[];
   edges: ProductWorkflowEdge[];
   updatedAt: string;
+  versions?: ProductWorkflowTemplateVersion[];
+};
+
+export type ProductWorkflowTemplateVersion = {
+  id: string;
+  version: string;
+  templateId: string;
+  name: string;
+  description: string;
+  category: MeetingType;
+  status: "snapshot" | "published";
+  templateStatus: "draft" | "published";
+  summary: string;
+  createdBy: string;
+  createdAt: string;
+  nodes: ProductWorkflowNode[];
+  edges: ProductWorkflowEdge[];
 };
 
 export type ProductWorkflowRunStatus = "queued" | "running" | "blocked" | "completed" | "failed";
