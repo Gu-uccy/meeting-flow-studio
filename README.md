@@ -9,11 +9,17 @@ Meeting Flow Studio 是一个面向团队会议协作的流程编排工作台。
 - 可视化会议流程编排：基于 React Flow 实现流程画布、节点状态、连线状态、画布聚焦缩放和节点配置。
 - 会议工作台：包含会议队列、筛选排序、会议详情、议程、参会人、待办事项和流程操作区。
 - 工作流运行模型：支持工作流模板、节点运行状态、阻塞处理、重试、取消、运行日志和配置快照。
+- 全局运行控制台：跨会议、跨模板查看运行状态，处理阻塞与失败任务。
+- 模板生命周期：支持模板 CRUD、导入导出、版本快照、发布与回滚。
+- 知识库与向量检索：支持知识文档上传，纳入会议记忆向量索引。
+- 节点智能体工作室：Prompt / Schema / 映射 / 版本 / Debug 一体化配置。
+- 对外 Service API：应用级 API Key，支持外部系统触发已发布工作流。
 - 认证与权限：基于 JWT 的登录注册、会话校验和 admin / editor / viewer 角色能力。
+- 账号集成总览：AI、Google、飞书、向量索引、Service API Key 统一管理与状态展示。
 - 日历集成：提供 Google Calendar / Meet 和飞书日历 OAuth 接入、授权状态展示和会议同步。
 - AI-ready 节点：AI 节点可接入 Anthropic；未配置密钥时使用本地模拟输出，便于演示和开发。
 - Monorepo 工程化：使用 pnpm workspace 管理 web、api、shared 三个 package，统一构建、类型检查和测试。
-- CI 覆盖：GitHub Actions 在 push / pull request 时执行安装、测试和构建。
+- CI 覆盖：GitHub Actions 在 push / pull request 时执行安装、测试、构建和 Playwright E2E。
 
 ## 技术栈
 
@@ -21,11 +27,11 @@ Meeting Flow Studio 是一个面向团队会议协作的流程编排工作台。
 | --- | --- |
 | 前端 | React, TypeScript, Vite, React Flow |
 | 后端 | Fastify, TypeScript, JWT, bcryptjs, node-cron |
-| 数据 | SQLite, 本地持久化 store |
+| 数据 | SQLite（开发默认）/ PostgreSQL（生产推荐），Repository 抽象 |
 | 类型与校验 | Zod, shared package |
 | 日历集成 | Google Calendar API, Feishu/Lark Calendar API |
-| AI 节点 | Anthropic SDK，可选启用 |
-| 工程化 | pnpm workspace, GitHub Actions |
+| AI 节点 | Anthropic SDK，OpenAI Embedding（可选） |
+| 工程化 | pnpm workspace, GitHub Actions, Playwright E2E |
 
 ## 核心功能
 
@@ -38,18 +44,27 @@ Meeting Flow Studio 是一个面向团队会议协作的流程编排工作台。
 
 ### 流程画布
 
-- 支持三类默认工作流模板选择。
+- 支持多类工作流模板选择与编辑模式工具栏（新建、复制、导入导出）。
 - 基于 React Flow 展示节点、连线、运行态和阻塞态。
 - 点击画布后进入鼠标焦点状态，只有聚焦时滚轮才会缩放画布。
 - 支持新增节点、拖拽节点、连接节点、保存画布和放弃修改。
+- 模板版本管理：保存快照、发布版本、Diff 对比与回滚（编辑模式底部面板，默认折叠）。
 - 节点配置面板支持编辑标题、描述、类型、负责人、输入输出和配置字段。
 
 ### 工作流运行
 
-- 支持从当前会议启动工作流。
-- 支持查看运行摘要、运行日志和节点执行时间线。
+- 支持从当前会议启动工作流，异步 Job 队列执行。
+- 支持查看运行摘要、运行日志、节点执行时间线和延迟瀑布图。
 - 支持阻塞节点处理、失败重试和取消运行。
 - 支持保存运行时的配置快照，用于对比当前模板配置。
+- 全局运行控制台：按状态 / 模板 / 会议筛选，跨视图处理阻塞任务。
+
+### 知识库与集成
+
+- 知识文档上传，纳入向量检索索引。
+- 拓展工具面板：节点能力矩阵、记忆与知识配置。
+- 账号页集成总览：平台统计与 Service API Key 管理。
+- 对外 Service API：`POST /api/v1/apps/{id}/run` 触发已发布应用工作流。
 
 ### 外部日历
 
@@ -71,18 +86,17 @@ meeting-flow-studio/
   apps/
     api/                 Fastify API 服务
       src/
+        lib/db/          数据库抽象（SQLite / PostgreSQL）
+        repositories/    JSON 文档型 Repository
+        routes/          模块化 API 路由
         services/        认证、执行器、日历、AI、调度等业务服务
-        server.ts        API 路由入口
-        meetingStore.ts  会议数据持久化
-        userStore.ts     用户数据持久化
-        workflowStore.ts 工作流模板与运行记录持久化
+        server.ts        API 入口
     web/                 React + Vite 前端工作台
       src/
-        components/      auth、common、meetings、workflow 组件
-        contexts/        认证上下文
-        hooks/           会议、工作流、日历集成 hooks
-        lib/             API client、格式化工具
-        App.tsx          工作台主入口
+        components/      workbench、meetings、workflow 组件
+        contexts/        工作台与认证上下文
+        hooks/           会议、工作流、知识库 hooks
+        lib/             工具函数与测试
   packages/
     shared/              前后端共享类型、Zod schema、种子数据和模板
   .github/workflows/     CI 配置
@@ -100,9 +114,10 @@ flowchart LR
   API --> Executor["工作流执行器"]
   Executor --> AI["AI 节点 / Anthropic 或 Mock"]
   API --> Calendar["Google / 飞书日历集成"]
-  MeetingStore --> SQLite["SQLite 本地数据库"]
-  WorkflowStore --> SQLite
-  Auth --> SQLite
+  API --> ServiceAPI["Service API / 外部触发"]
+  MeetingStore --> DB["SQLite / PostgreSQL"]
+  WorkflowStore --> DB
+  Auth --> DB
   Shared["shared package: 类型、schema、种子数据"] --> Web
   Shared --> API
 ```
@@ -163,7 +178,10 @@ pnpm build        # 全仓库构建
 | `PORT` | API 端口，默认 `8787` |
 | `HOST` | API 监听地址，默认 `127.0.0.1` |
 | `JWT_SECRET` | JWT 签名密钥，生产环境必须覆盖 |
+| `DB_DRIVER` | 数据库驱动，`sqlite`（默认）或 `postgres` |
+| `DATABASE_URL` | PostgreSQL 连接串（生产使用 Postgres 时必填） |
 | `ANTHROPIC_API_KEY` | 可选，配置后 AI 节点调用 Anthropic |
+| `OPENAI_API_KEY` | 可选，向量 Embedding（未配置时使用本地 hash 降级） |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
 | `GOOGLE_REDIRECT_URI` | Google OAuth 回调地址 |
@@ -220,13 +238,15 @@ FEISHU_OAUTH_SCOPES="calendar:calendar calendar:calendar.event:create"
 
 ## 本地数据
 
-开发数据默认写入：
+开发环境默认使用 SQLite，数据写入：
 
 ```text
 apps/api/data/meetings.db
 ```
 
-该文件是本地运行产物，已被 `.gitignore` 忽略。删除该文件后再次启动 API，会重新写入种子用户、种子会议和默认工作流模板。
+生产环境推荐使用 PostgreSQL，详见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+
+数据库文件是本地运行产物，已被 `.gitignore` 忽略。删除 SQLite 文件后再次启动 API，会重新写入种子用户、种子会议和默认工作流模板。
 
 ## CI
 
@@ -242,24 +262,25 @@ CI 会在 push 到 `main` 或创建 pull request 时执行：
 pnpm install --frozen-lockfile
 pnpm test
 pnpm build
+pnpm --filter @meeting-flow/web test:e2e
 ```
 
 ## 简历描述参考
 
 ```text
 Meeting Flow Studio｜会议流程编排工作台
-技术栈：React, TypeScript, Vite, React Flow, Fastify, JWT, SQLite, pnpm workspace
+技术栈：React, TypeScript, Vite, React Flow, Fastify, JWT, SQLite/PostgreSQL, pnpm workspace
 
-- 设计并实现一个面向团队会议协作的流程编排平台，将会议申请、议程生成、上下文查询、审批节点、日历同步和会后行动项抽象为可视化工作流。
-- 基于 React Flow 实现流程画布，支持节点选择、节点配置、连线状态展示、画布缩放聚焦、运行状态可视化和阻塞节点处理。
-- 使用 Fastify 构建后端 API，完成用户认证、角色权限、会议数据、工作流模板、运行记录和集成状态等核心模块。
-- 采用 pnpm workspace 搭建 monorepo，将前后端共享类型、数据 schema 和种子数据沉淀到 shared package，减少接口类型不一致问题。
-- 接入 Google Calendar / 飞书日历集成入口，支持会议同步、授权状态展示和外部日历回调配置。
+- 设计并实现面向团队会议协作的流程编排平台，将会议申请、议程生成、上下文查询、审批节点、日历同步和会后行动项抽象为可视化工作流。
+- 基于 React Flow 实现流程画布，支持模板编辑、版本快照/回滚、运行状态可视化、全局运行控制台和阻塞节点处理。
+- 使用 Fastify 构建后端 API，完成认证权限、Repository 持久化层、异步工作流 Job、知识库向量检索和 Service API 对外调用。
+- 采用 pnpm workspace 搭建 monorepo，将类型、schema 和种子数据沉淀到 shared package；CI 覆盖单元测试与 Playwright E2E。
+- 接入 Google Calendar / 飞书日历，并提供账号集成总览与生产部署文档（单实例 / PostgreSQL）。
 ```
 
 ## 后续规划
 
-- 将 SQLite store 抽象为 repository 接口，方便迁移到 PostgreSQL 等生产数据库。
-- 分布式 Job 队列（Redis/Bull）与多实例 Cron 协调。
-- 知识库文档上传、模板 CRUD/版本、插件化 Tool 注册。
-- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 了解当前单实例部署方式。
+- 分布式 Job 队列（Redis/Bull）与多实例水平扩展。
+- 插件化 Tool 注册与更完整的节点能力运行时。
+- 向量索引增量更新与 Postgres 集成测试纳入 CI。
+- 详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 了解当前单实例部署方式与已知限制。
