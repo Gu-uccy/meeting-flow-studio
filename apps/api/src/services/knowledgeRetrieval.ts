@@ -63,10 +63,10 @@ function retrievalModeFromProvider(provider: string): KnowledgeRetrievalResult["
 export function normalizeKnowledgeSources(sources?: string) {
   const normalized = sources?.trim() ?? "";
   if (!normalized) {
-    return "meeting_memories,meeting_notes";
+    return "meeting_memories,meeting_notes,knowledge_documents";
   }
 
-  if (normalized.includes("meeting_memories") || normalized.includes("meeting_notes")) {
+  if (normalized.includes("meeting_memories") || normalized.includes("meeting_notes") || normalized.includes("knowledge_documents")) {
     return normalized
       .split(/[,，\n]/)
       .map((item) => item.trim())
@@ -75,10 +75,10 @@ export function normalizeKnowledgeSources(sources?: string) {
   }
 
   if (/纪要|记忆|memory|notes|文档|CRM/i.test(normalized)) {
-    return "meeting_memories,meeting_notes";
+    return "meeting_memories,meeting_notes,knowledge_documents";
   }
 
-  return normalized;
+  return "meeting_memories,meeting_notes,knowledge_documents";
 }
 
 async function retrieveWithMemoryStore(
@@ -146,7 +146,12 @@ export async function retrieveMeetingKnowledge(
     const contextPack = vectorHits.map((hit) => ({
       id: hit.id,
       kind: hit.kind,
-      source: hit.sourceType === "meeting_notes" ? "meeting.notes" : "meeting.memory",
+      source:
+        hit.sourceType === "meeting_notes"
+          ? "meeting.notes"
+          : hit.sourceType === "document"
+            ? "knowledge.document"
+            : "meeting.memory",
       content: hit.content,
       similarity: Number(hit.similarity.toFixed(4))
     }));

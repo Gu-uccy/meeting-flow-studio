@@ -2,13 +2,23 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { buildAiApplicationsFromTemplates, ensureProductWorkflowNodeExecutors, buildNodeAgentApplicationId } from "@meeting-flow/shared";
 import type { AppContext } from "../lib/context.js";
 import type { ProductWorkflowTemplate, ProductWorkflowNodeExecutor, ProductWorkflowRun } from "@meeting-flow/shared";
-import { selectWorkflowTemplate, persistWorkflowMemories, persistWorkflowMeetingWriteback, sortRunsByStartedAtDesc, notifyWorkflowUpdate } from "../lib/context.js";
+import { selectWorkflowTemplate, notifyWorkflowUpdate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { saveWorkflowTemplates, saveWorkflowRuns } from "../workflowStore.js";
-import { advanceWorkflowExecution } from "../services/executor.js";
 import { getAllSchedules, addSchedule, removeSchedule, updateSchedule } from "../services/scheduler.js";
 import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
 import {
+  createBlankWorkflowTemplate,
+  cloneWorkflowTemplate,
+  sanitizeImportedTemplate
+} from "../lib/templateFactory.js";
+import {
+  applyWorkflowTemplateVersion,
+  buildWorkflowTemplateVersion,
+  demotePublishedTemplateVersions
+} from "../lib/templateVersionFactory.js";
+import {
+  enqueueWorkflowAdvanceJob,
   enqueueWorkflowResumeJob,
   enqueueWorkflowRunJob,
   isWorkflowRunActive,
@@ -27,6 +37,91 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     return { template: ensureProductWorkflowNodeExecutors(template) };
   });
 
+  app.post("/api/workflows/templates", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const body = request.body as {
+      name?: string;
+      description?: string;
+      category?: ProductWorkflowTemplate["category"];
+      sourceTemplateId?: string;
+    };
+
+    const sourceTemplateId = typeof body.sourceTemplateId === "string" ? body.sourceTemplateId.trim() : "";
+    let template: ProductWorkflowTemplate;
+
+    if (sourceTemplateId) {
+      const source = ctx.workflowTemplates.find((item) => item.id === sourceTemplateId);
+      if (!source) {
+        return reply.code(404).send({ message: "未找到源工作流模板" });
+      }
+      template = cloneWorkflowTemplate(source, body.name);
+    } else {
+      template = createBlankWorkflowTemplate({
+        name: body.name ?? "新建工作流",
+        description: body.description,
+        category: body.category
+      });
+    }
+
+    ctx.workflowTemplates = [template, ...ctx.workflowTemplates];
+    await saveWorkflowTemplates(ctx.workflowTemplates);
+    return reply.code(201).send({ template, message: "工作流模板已创建" });
+  });
+
+  app.post("/api/workflows/templates/:id/duplicate", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const id = (request.params as { id: string }).id;
+    const body = request.body as { name?: string };
+    const source = ctx.workflowTemplates.find((item) => item.id === id);
+    if (!source) return reply.code(404).send({ message: "未找到对应工作流模板" });
+
+    const template = cloneWorkflowTemplate(source, body.name);
+    ctx.workflowTemplates = [template, ...ctx.workflowTemplates];
+    await saveWorkflowTemplates(ctx.workflowTemplates);
+    return reply.code(201).send({ template, message: "工作流模板已复制" });
+  });
+
+  app.get("/api/workflows/templates/:id/export", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const template = ctx.workflowTemplates.find((item) => item.id === (request.params as { id: string }).id);
+    if (!template) return reply.code(404).send({ message: "未找到对应工作流模板" });
+
+    reply.header("content-type", "application/json; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="${template.id}.json"`);
+    return JSON.stringify(template, null, 2);
+  });
+
+  app.post("/api/workflows/templates/import", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const body = request.body as { template?: ProductWorkflowTemplate };
+    if (!body.template) {
+      return reply.code(400).send({ message: "请提供 template JSON" });
+    }
+
+    try {
+      const template = sanitizeImportedTemplate(body.template);
+      ctx.workflowTemplates = [template, ...ctx.workflowTemplates];
+      await saveWorkflowTemplates(ctx.workflowTemplates);
+      return reply.code(201).send({ template, message: "工作流模板已导入" });
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : "导入失败" });
+    }
+  });
+
+  app.delete("/api/workflows/templates/:id", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const id = (request.params as { id: string }).id;
+    const template = ctx.workflowTemplates.find((item) => item.id === id);
+    if (!template) return reply.code(404).send({ message: "未找到对应工作流模板" });
+    if (ctx.workflowTemplates.length <= 1) {
+      return reply.code(400).send({ message: "至少需要保留一个工作流模板" });
+    }
+
+    const hasRuns = ctx.workflowRuns.some((run) => run.templateId === id);
+    if (hasRuns) {
+      return reply.code(400).send({ message: "该模板已有运行记录，无法删除" });
+    }
+
+    ctx.workflowTemplates = ctx.workflowTemplates.filter((item) => item.id !== id);
+    await saveWorkflowTemplates(ctx.workflowTemplates);
+    return { deletedId: id, message: "工作流模板已删除" };
+  });
+
   app.patch("/api/workflows/templates/:id/canvas", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
     const id = (request.params as { id: string }).id;
     const body = request.body as Partial<ProductWorkflowTemplate>;
@@ -42,6 +137,65 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     ctx.workflowTemplates = ctx.workflowTemplates.map((t) => (t.id === id ? updatedTemplate : t));
     await saveWorkflowTemplates(ctx.workflowTemplates);
     return { template: updatedTemplate, message: "画布已保存" };
+  });
+
+  app.get("/api/workflows/templates/:id/versions", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const id = (request.params as { id: string }).id;
+    const template = ctx.workflowTemplates.find((item) => item.id === id);
+    if (!template) return reply.code(404).send({ message: "未找到对应工作流模板" });
+    return { items: template.versions ?? [] };
+  });
+
+  app.post("/api/workflows/templates/:id/versions", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const id = (request.params as { id: string }).id;
+    const body = request.body as { status?: "snapshot" | "published"; summary?: string };
+    const template = ctx.workflowTemplates.find((item) => item.id === id);
+    if (!template) return reply.code(404).send({ message: "未找到对应工作流模板" });
+
+    const status = body.status === "published" ? "published" : "snapshot";
+    const summary = typeof body.summary === "string" && body.summary.trim()
+      ? body.summary.trim().slice(0, 160)
+      : status === "published"
+        ? "发布当前工作流模板"
+        : "保存当前工作流模板快照";
+
+    const version = buildWorkflowTemplateVersion(template, status, summary, request.user.name);
+    const nextVersions = status === "published"
+      ? demotePublishedTemplateVersions(template.versions ?? [], version.id)
+      : (template.versions ?? []);
+
+    const updatedTemplate = ensureProductWorkflowNodeExecutors({
+      ...template,
+      status: status === "published" ? "published" : template.status,
+      updatedAt: version.createdAt,
+      versions: [version, ...nextVersions].slice(0, 30)
+    });
+
+    ctx.workflowTemplates = ctx.workflowTemplates.map((item) => (item.id === id ? updatedTemplate : item));
+    await saveWorkflowTemplates(ctx.workflowTemplates);
+    return reply.code(201).send({
+      template: updatedTemplate,
+      version,
+      message: status === "published" ? "工作流模板版本已发布" : "工作流模板版本已保存"
+    });
+  });
+
+  app.post("/api/workflows/templates/:id/versions/:versionId/apply", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    const { id, versionId } = request.params as { id: string; versionId: string };
+    const template = ctx.workflowTemplates.find((item) => item.id === id);
+    if (!template) return reply.code(404).send({ message: "未找到对应工作流模板" });
+
+    const version = (template.versions ?? []).find((item) => item.id === versionId);
+    if (!version) return reply.code(404).send({ message: "未找到对应的工作流模板版本" });
+
+    const updatedTemplate = applyWorkflowTemplateVersion(template, version);
+    ctx.workflowTemplates = ctx.workflowTemplates.map((item) => (item.id === id ? updatedTemplate : item));
+    await saveWorkflowTemplates(ctx.workflowTemplates);
+    return {
+      template: updatedTemplate,
+      version,
+      message: "工作流模板已回滚到选定版本"
+    };
   });
 
   app.patch("/api/workflows/templates/:templateId/nodes/:nodeId/config", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -98,11 +252,12 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
 
   // Runs
   app.get("/api/workflows/runs", { preHandler: [authenticate] }, async (request: FastifyRequest) => {
-    const query = request.query as { templateId?: string; meetingId?: string };
+    const query = request.query as { templateId?: string; meetingId?: string; status?: ProductWorkflowRun["status"] };
     const items = ctx.workflowRuns.filter((r) => {
       const matchesTemplate = query.templateId ? r.templateId === query.templateId : true;
       const matchesMeeting = query.meetingId ? r.meetingId === query.meetingId : true;
-      return matchesTemplate && matchesMeeting;
+      const matchesStatus = query.status ? r.status === query.status : true;
+      return matchesTemplate && matchesMeeting && matchesStatus;
     });
     return { items };
   });
@@ -143,20 +298,20 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = ctx.workflowTemplates.find((t) => t.id === run.templateId);
     if (!meeting || !template) return reply.code(404).send({ message: "关联的会议或模板已不存在" });
 
-    const advancedRun = await advanceWorkflowExecution(
-      run,
+    const advancedRun = await enqueueWorkflowAdvanceJob(
+      ctx,
       meeting,
       template,
+      run,
       resolutionNote,
-      undefined,
       await buildWorkflowExecutionOptions(request.user.id)
     );
-    ctx.workflowRuns = ctx.workflowRuns.map((r) => (r.id === id ? advancedRun : r)).sort(sortRunsByStartedAtDesc);
-    await saveWorkflowRuns(ctx.workflowRuns);
-    await persistWorkflowMeetingWriteback(meeting, advancedRun, ctx);
-    const memories = await persistWorkflowMemories(meeting, advancedRun, ctx);
-    notifyWorkflowUpdate(ctx, advancedRun);
-    return { run: advancedRun, memoryCount: memories.length, message: "阻塞节点已处理，流程已继续运行" };
+
+    return {
+      run: advancedRun,
+      memoryCount: 0,
+      message: advancedRun.status === "running" ? "阻塞已处理，流程正在后台继续运行" : "阻塞节点已处理，流程已继续运行"
+    };
   });
 
   app.post("/api/workflows/runs/:id/retry", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -233,7 +388,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!meeting) return reply.code(404).send({ message: "未找到对应会议" });
     }
 
-    const schedule = addSchedule({
+    const schedule = await addSchedule({
       id: `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       templateId,
       cronExpression,
@@ -255,7 +410,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!meeting) return reply.code(404).send({ message: "未找到对应会议" });
     }
 
-    const schedule = updateSchedule(id, {
+    const schedule = await updateSchedule(id, {
       enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
       meetingId: body.meetingId === null ? undefined : typeof body.meetingId === "string" ? body.meetingId.trim() || undefined : existing.meetingId,
       cronExpression: typeof body.cronExpression === "string" && body.cronExpression.trim() ? body.cronExpression.trim() : existing.cronExpression
@@ -267,7 +422,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.delete("/api/workflows/schedules/:id", { preHandler: [authenticate] }, async (request: FastifyRequest) => {
     const id = (request.params as { id: string }).id;
-    removeSchedule(id);
+    await removeSchedule(id);
     return { deletedId: id, message: "计划任务已删除" };
   });
 }

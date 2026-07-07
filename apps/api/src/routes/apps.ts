@@ -4,7 +4,7 @@ import type { AppContext } from "../lib/context.js";
 import type { AiApplicationVersion, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import {
   normalizeDebugInputs, validateApplicationInputs, getNodeApplicationBinding,
-  buildNodeAgentVersion, createWorkflowRun, persistWorkflowMemories, persistWorkflowMeetingWriteback, notifyWorkflowUpdate,
+  buildNodeAgentVersion, persistWorkflowMemories, persistWorkflowMeetingWriteback, notifyWorkflowUpdate,
 } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
@@ -13,6 +13,7 @@ import { executeSingleNodeRun } from "../services/executor.js";
 import { sortRunsByStartedAtDesc } from "../lib/context.js";
 import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
 import { demotePublishedVersions } from "../services/nodeAgentRuntime.js";
+import { enqueueWorkflowRunJob } from "../services/workflowJobRunner.js";
 
 export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
   // List all AI applications
@@ -132,7 +133,7 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
     const executionOptions = await buildWorkflowExecutionOptions(request.user.id);
     const run = node
       ? await executeSingleNodeRun(meeting, template, node, debugInputs, executionOptions)
-      : await createWorkflowRun(meeting, template, executionOptions, ctx);
+      : await enqueueWorkflowRunJob(ctx, meeting, template, executionOptions);
 
     if (node) {
       ctx.workflowRuns = [run, ...ctx.workflowRuns].sort(sortRunsByStartedAtDesc);
@@ -147,7 +148,13 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
       inputs: debugInputs,
       run,
       memoryCount: 0,
-      message: run.status === "blocked" ? "调试运行已创建，流程停在阻塞节点" : "调试运行已完成"
+      message: node
+        ? run.status === "blocked"
+          ? "调试运行已创建，流程停在阻塞节点"
+          : "调试运行已完成"
+        : run.status === "running"
+          ? "调试运行已启动，正在后台执行"
+          : "调试运行已创建"
     });
   });
 

@@ -10,6 +10,7 @@ import { saveWorkflowRuns } from "../workflowStore.js";
 import {
   buildInitialWorkflowRun,
   executeWorkflowRun,
+  prepareAdvanceWorkflowRun,
   resumeWorkflowRun,
   type WorkflowExecutionOptions
 } from "./executor.js";
@@ -67,6 +68,66 @@ export async function enqueueWorkflowRunJob(
 
   void runWorkflowJob(ctx, meeting, template, runId, options);
   return initialRun;
+}
+
+export async function enqueueWorkflowAdvanceJob(
+  ctx: AppContext,
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  run: ProductWorkflowRun,
+  resolutionNote: string,
+  options?: WorkflowExecutionOptions
+) {
+  const preparedRun = prepareAdvanceWorkflowRun(run, meeting, template, resolutionNote);
+
+  if (preparedRun.status !== "running") {
+    ctx.workflowRuns = ctx.workflowRuns.map((item) => (item.id === run.id ? preparedRun : item)).sort(sortRunsByStartedAtDesc);
+    await saveWorkflowRuns(ctx.workflowRuns);
+    await persistWorkflowMeetingWriteback(meeting, preparedRun, ctx);
+    await persistWorkflowMemories(meeting, preparedRun, ctx);
+    notifyWorkflowUpdate(ctx, preparedRun);
+    return preparedRun;
+  }
+
+  const advancingRun: ProductWorkflowRun = {
+    ...preparedRun,
+    logs: [
+      ...preparedRun.logs,
+      {
+        id: `log-${Date.now()}-advance`,
+        time: new Date().toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        level: "info",
+        message: "阻塞已处理，流程继续在后台运行"
+      }
+    ]
+  };
+
+  ctx.workflowRuns = ctx.workflowRuns.map((item) => (item.id === run.id ? advancingRun : item)).sort(sortRunsByStartedAtDesc);
+  await saveWorkflowRuns(ctx.workflowRuns);
+  notifyWorkflowUpdate(ctx, advancingRun);
+
+  void runWorkflowJob(ctx, meeting, template, run.id, options, advancingRun);
+  return advancingRun;
+}
+
+export async function waitForWorkflowRunCompletion(
+  ctx: AppContext,
+  runId: string,
+  timeoutMs = 8000,
+  pollMs = 80
+): Promise<ProductWorkflowRun | null> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const run = ctx.workflowRuns.find((item) => item.id === runId);
+    if (run && run.status !== "running") {
+      return run;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+
+  return ctx.workflowRuns.find((item) => item.id === runId) ?? null;
 }
 
 export async function enqueueWorkflowResumeJob(

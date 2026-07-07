@@ -11,6 +11,7 @@ import { appRoutes } from "../routes/apps.js";
 import { agentRoutes } from "../routes/agent.js";
 import { memoryRoutes } from "../routes/memories.js";
 import { knowledgeRoutes } from "../routes/knowledge.js";
+import { serviceApiRoutes } from "../routes/serviceApi.js";
 import { aiRoutes } from "../routes/ai.js";
 import { integrationRoutes } from "../routes/integrations.js";
 
@@ -111,6 +112,7 @@ export async function buildTestApp(ctx?: Partial<TestContext>) {
   await app.register(async (subApp) => workflowRoutes(subApp, appCtx));
   await app.register(async (subApp) => appRoutes(subApp, appCtx));
   await app.register(async (subApp) => agentRoutes(subApp, appCtx));
+  await app.register(async (subApp) => serviceApiRoutes(subApp, appCtx));
   await app.register(async (subApp) => memoryRoutes(subApp, appCtx));
   await app.register(async (subApp) => knowledgeRoutes(subApp, appCtx));
   await app.register(aiRoutes);

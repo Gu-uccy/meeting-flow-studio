@@ -8,11 +8,14 @@ import { ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 import { loadMeetings } from "./meetingStore.js";
 import { loadMeetingMemories } from "./memoryStore.js";
 import { syncVectorKnowledgeIndex } from "./vectorStore.js";
+import { listKnowledgeDocuments } from "./knowledgeDocumentStore.js";
 import { loadWorkflowRuns, loadWorkflowTemplates } from "./workflowStore.js";
 import { loadUsers, migrateExistingMeetings } from "./userStore.js";
 import { enqueueWorkflowRunJob } from "./services/workflowJobRunner.js";
 import { recordScheduleExecution } from "./services/scheduler.js";
 import { buildWorkflowExecutionOptions } from "./lib/executionOptions.js";
+import { assertProductionSecrets, getJwtSecret, isSchedulerEnabled } from "./lib/env.js";
+import { assertDatabaseConfig, ensureDatabaseReady } from "./lib/db/index.js";
 import { startScheduler } from "./services/scheduler.js";
 
 // Route modules
@@ -24,6 +27,7 @@ import { appRoutes } from "./routes/apps.js";
 import { aiRoutes } from "./routes/ai.js";
 import { integrationRoutes } from "./routes/integrations.js";
 import { agentRoutes } from "./routes/agent.js";
+import { serviceApiRoutes } from "./routes/serviceApi.js";
 import { memoryRoutes } from "./routes/memories.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 
@@ -106,13 +110,16 @@ setInterval(() => {
 
 await app.register(cors, { origin: true });
 
-const jwtSecret = process.env["JWT_SECRET"] ?? "meeting-flow-dev-secret-change-in-production";
+const jwtSecret = getJwtSecret();
 await app.register(fjwt, { secret: jwtSecret });
 
 // Register WebSocket plugin
 await app.register(websocket);
 
 // ── Shared context ──
+
+assertDatabaseConfig();
+await ensureDatabaseReady();
 
 const meetings: MeetingRecord[] = await loadMeetings();
 const meetingMemories: MeetingMemory[] = await loadMeetingMemories();
@@ -121,7 +128,7 @@ const workflowTemplates: ProductWorkflowTemplate[] = (await loadWorkflowTemplate
 
 await loadUsers();
 await migrateExistingMeetings();
-await syncVectorKnowledgeIndex(meetingMemories, meetings);
+await syncVectorKnowledgeIndex(meetingMemories, meetings, await listKnowledgeDocuments());
 
 const wsClients = new Set<WebSocket>();
 
@@ -168,6 +175,7 @@ await app.register(async (subApp) => meetingRoutes(subApp, ctx));
 await app.register(async (subApp) => workflowRoutes(subApp, ctx));
 await app.register(async (subApp) => appRoutes(subApp, ctx));
 await app.register(async (subApp) => agentRoutes(subApp, ctx));
+await app.register(async (subApp) => serviceApiRoutes(subApp, ctx));
 await app.register(async (subApp) => memoryRoutes(subApp, ctx));
 await app.register(async (subApp) => knowledgeRoutes(subApp, ctx));
 await app.register(aiRoutes);
@@ -178,7 +186,10 @@ await app.register(integrationRoutes);
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "127.0.0.1";
 
-startScheduler(ctx.workflowTemplates, ctx.meetings, async (schedule) => {
+assertProductionSecrets();
+
+if (isSchedulerEnabled()) {
+  await startScheduler(ctx.workflowTemplates, ctx.meetings, async (schedule) => {
   const template = ctx.workflowTemplates.find((t) => t.id === schedule.templateId);
   if (!template) return;
 
@@ -191,12 +202,15 @@ startScheduler(ctx.workflowTemplates, ctx.meetings, async (schedule) => {
   try {
     const executionOptions = await buildWorkflowExecutionOptions(matchingMeeting.ownerUserId || "system");
     const run = await enqueueWorkflowRunJob(ctx, matchingMeeting, template, executionOptions);
-    recordScheduleExecution(schedule.id, run.id, run.status);
+    await recordScheduleExecution(schedule.id, run.id, run.status);
     app.log.info(`Scheduled workflow "${template.name}" started: ${run.id}`);
   } catch (error) {
     app.log.error(`Scheduled workflow failed: ${String(error)}`);
   }
-});
+  });
+} else {
+  app.log.warn("Scheduler disabled via SCHEDULER_ENABLED=false");
+}
 
 try {
   await app.listen({ port, host });

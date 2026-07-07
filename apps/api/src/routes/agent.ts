@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../lib/context.js";
-import { canAccessMemory, selectWorkflowTemplate, createWorkflowRun } from "../lib/context.js";
+import { canAccessMemory, selectWorkflowTemplate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
 import { planMeetingAgentWorkflow, runMeetingAgent } from "../services/agent.js";
 import { getUserAiApiKey } from "../aiKeyStore.js";
 import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
+import { enqueueWorkflowRunJob } from "../services/workflowJobRunner.js";
 
 export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post("/api/agent/meetings/:id/run", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -28,7 +29,12 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
     const template = ctx.workflowTemplates.find((t) => t.id === agentPlan.templateId) ?? selectWorkflowTemplate(meeting, ctx.workflowTemplates);
     if (!template) return reply.code(404).send({ message: "未找到可运行的工作流模板" });
 
-    const workflowRun = await createWorkflowRun(meeting, template, await buildWorkflowExecutionOptions(request.user.id), ctx);
+    const workflowRun = await enqueueWorkflowRunJob(
+      ctx,
+      meeting,
+      template,
+      await buildWorkflowExecutionOptions(request.user.id)
+    );
 
     const agentRun = await runMeetingAgent({
       meeting,
@@ -37,7 +43,7 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
       selectedTemplate: template,
       executedRun: workflowRun,
       templates: ctx.workflowTemplates,
-      runs: ctx.workflowRuns.filter((r) => r.meetingId === meeting.id),
+      runs: [workflowRun, ...ctx.workflowRuns.filter((r) => r.meetingId === meeting.id)],
       memories: accessibleMemories
     });
 
@@ -45,7 +51,12 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
       agentRun,
       workflowRun,
       memoryCount: 0,
-      message: workflowRun.status === "blocked" ? "Agent 已运行工作流，但需要人工处理阻塞节点" : "Agent 已运行工作流"
+      message:
+        workflowRun.status === "running"
+          ? "Agent 已启动工作流，正在后台执行"
+          : workflowRun.status === "blocked"
+            ? "Agent 已运行工作流，但需要人工处理阻塞节点"
+            : "Agent 已运行工作流"
     };
   });
 }

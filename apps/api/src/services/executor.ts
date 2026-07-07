@@ -1150,6 +1150,77 @@ export async function resumeWorkflowRun(
   return executeWorkflowRun(meeting, template, retryConfig, options, hooks);
 }
 
+export function prepareAdvanceWorkflowRun(
+  run: ProductWorkflowRun,
+  meeting: MeetingRecord,
+  template: ProductWorkflowTemplate,
+  resolutionNote: string
+): ProductWorkflowRun {
+  const now = new Date();
+  const nextLogs = [...run.logs];
+  const runtimeStore = restoreWorkflowRuntimeStore(meeting, run.runtimeSnapshot);
+  const nodeResults = run.runtimeSnapshot
+    ? seedNodeResultsFromRuns(run.nodeRuns)
+    : hydrateRuntimeStoreFromCompletedNodes(template, run.nodeRuns, runtimeStore);
+
+  const nextNodeRuns = run.nodeRuns.map((nodeRun) => {
+    if (nodeRun.status !== "blocked") {
+      return nodeRun;
+    }
+
+    nextLogs.push({
+      id: `log-${Date.now()}-${nodeRun.nodeId}-resolved`,
+      time: logTime(now),
+      level: "success",
+      message: `人工处理完成：${resolutionNote}`,
+      nodeId: nodeRun.nodeId
+    });
+
+    const node = template.nodes.find((entry) => entry.id === nodeRun.nodeId);
+    const resolvedOutputPayload = {
+      ...(nodeRun.outputPayload ?? {}),
+      manualResolution: true,
+      resolutionNote
+    };
+    const resolvedRun: ProductNodeRun = {
+      ...nodeRun,
+      status: "success",
+      endedAt: now.toISOString(),
+      outputPayload: resolvedOutputPayload,
+      errorMessage: undefined
+    };
+
+    if (node && resolvedOutputPayload) {
+      const mapped = applyNodeOutputMapping(node, resolvedOutputPayload, runtimeStore);
+      const finalRun = { ...resolvedRun, outputPayload: mapped.outputPayload };
+      nodeResults.set(nodeRun.nodeId, finalRun);
+      return finalRun;
+    }
+
+    nodeResults.set(nodeRun.nodeId, resolvedRun);
+    return resolvedRun;
+  });
+
+  const hasPending = nextNodeRuns.some((nodeRun) => nodeRun.status === "pending" || nodeRun.status === "running");
+  const hasFailed = nextNodeRuns.some((nodeRun) => nodeRun.status === "failed");
+  const hasBlocked = nextNodeRuns.some((nodeRun) => nodeRun.status === "blocked");
+  const status: ProductWorkflowRun["status"] = hasFailed ? "failed" : hasBlocked ? "blocked" : hasPending ? "running" : "completed";
+
+  return {
+    ...run,
+    status,
+    durationSeconds: Math.max(
+      run.durationSeconds,
+      Math.round((now.getTime() - new Date(run.startedAt).getTime()) / 1000)
+    ),
+    endedAt: status === "completed" || status === "failed" ? now.toISOString() : undefined,
+    nodeRuns: nextNodeRuns,
+    logs: nextLogs,
+    runtimeSnapshot: runtimeStore,
+    usage: collectWorkflowRunUsage(nextNodeRuns)
+  };
+}
+
 export async function executeSingleNodeRun(
   meeting: MeetingRecord,
   template: ProductWorkflowTemplate,
@@ -1219,130 +1290,21 @@ export async function advanceWorkflowExecution(
   meeting: MeetingRecord,
   template: ProductWorkflowTemplate,
   resolutionNote: string,
-  _retryConfig?: { maxRetries?: number; retryDelayMs?: number },
-  options?: WorkflowExecutionOptions
+  retryConfig?: { maxRetries?: number; retryDelayMs?: number },
+  options?: WorkflowExecutionOptions,
+  hooks?: WorkflowExecutionHooks
 ): Promise<ProductWorkflowRun> {
-  const now = new Date();
-  const nextLogs = [...run.logs];
-  const runtimeStore = restoreWorkflowRuntimeStore(meeting, run.runtimeSnapshot);
-  const nodeResults = run.runtimeSnapshot
-    ? seedNodeResultsFromRuns(run.nodeRuns)
-    : hydrateRuntimeStoreFromCompletedNodes(template, run.nodeRuns, runtimeStore);
+  const preparedRun = prepareAdvanceWorkflowRun(run, meeting, template, resolutionNote);
 
-  const nextNodeRuns = run.nodeRuns.map((nodeRun) => {
-    if (nodeRun.status !== "blocked") {
-      return nodeRun;
-    }
-
-    nextLogs.push({
-      id: `log-${Date.now()}-${nodeRun.nodeId}-resolved`,
-      time: logTime(now),
-      level: "success",
-      message: `人工处理完成：${resolutionNote}`,
-      nodeId: nodeRun.nodeId
-    });
-
-    const node = template.nodes.find((entry) => entry.id === nodeRun.nodeId);
-    const resolvedOutputPayload = {
-      ...(nodeRun.outputPayload ?? {}),
-      manualResolution: true,
-      resolutionNote
-    };
-    const resolvedRun: ProductNodeRun = {
-      ...nodeRun,
-      status: "success",
-      endedAt: now.toISOString(),
-      outputPayload: resolvedOutputPayload,
-      errorMessage: undefined
-    };
-
-    if (node && resolvedOutputPayload) {
-      const mapped = applyNodeOutputMapping(node, resolvedOutputPayload, runtimeStore);
-      const finalRun = { ...resolvedRun, outputPayload: mapped.outputPayload };
-      nodeResults.set(nodeRun.nodeId, finalRun);
-      return finalRun;
-    }
-
-    nodeResults.set(nodeRun.nodeId, resolvedRun);
-    return resolvedRun;
-  });
-
-  const pendingNodeIds = new Set(
-    nextNodeRuns.filter((nodeRun) => nodeRun.status === "pending").map((nodeRun) => nodeRun.nodeId)
-  );
-
-  if (pendingNodeIds.size > 0) {
-    const { plan } = buildExecutionPlan(template);
-    const pendingPlan = plan.filter((entry) => pendingNodeIds.has(entry.node.id));
-
-    for (let index = 0; index < pendingPlan.length; index += 1) {
-      const nodeInfo = pendingPlan[index]!;
-      const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults, runtimeStore);
-      const timestamp = new Date(now.getTime() + index * 1000);
-      const result = await executeNodeByExecutor(nodeInfo.node, meeting, runtimeContext, options);
-      const nodeRunIndex = nextNodeRuns.findIndex((nodeRun) => nodeRun.nodeId === nodeInfo.node.id);
-
-      if (nodeRunIndex < 0) {
-        continue;
-      }
-
-      let finalRun: ProductNodeRun = {
-        ...result,
-        startedAt: result.startedAt ?? timestamp.toISOString(),
-        endedAt: result.endedAt ?? new Date(timestamp.getTime() + 1000).toISOString()
-      };
-
-      if (result.status === "success" && result.outputPayload) {
-        const mapped = applyNodeOutputMapping(nodeInfo.node, result.outputPayload, runtimeStore);
-        finalRun = { ...finalRun, outputPayload: mapped.outputPayload };
-        nodeResults.set(nodeInfo.node.id, finalRun);
-        nextLogs.push({
-          id: `log-${Date.now()}-${nodeInfo.node.id}-continued`,
-          time: logTime(timestamp),
-          level: "success",
-          message: `${nodeInfo.node.title} 已继续完成`,
-          nodeId: nodeInfo.node.id
-        });
-      } else if (result.status === "blocked") {
-        nextLogs.push({
-          id: `log-${Date.now()}-${nodeInfo.node.id}-blocked`,
-          time: logTime(timestamp),
-          level: "warning",
-          message: result.errorMessage ?? `${nodeInfo.node.title} 再次进入人工处理`,
-          nodeId: nodeInfo.node.id
-        });
-      } else if (result.status === "failed") {
-        nextLogs.push({
-          id: `log-${Date.now()}-${nodeInfo.node.id}-failed`,
-          time: logTime(timestamp),
-          level: "error",
-          message: result.errorMessage ?? `${nodeInfo.node.title} 执行失败`,
-          nodeId: nodeInfo.node.id
-        });
-      }
-
-      nextNodeRuns[nodeRunIndex] = finalRun;
-    }
+  if (preparedRun.status !== "running") {
+    return preparedRun;
   }
 
-  const durationSeconds = Math.max(
-    run.durationSeconds,
-    Math.round((now.getTime() - new Date(run.startedAt).getTime()) / 1000)
-  );
-  const hasFailed = nextNodeRuns.some((nodeRun) => nodeRun.status === "failed");
-  const hasBlocked = nextNodeRuns.some((nodeRun) => nodeRun.status === "blocked");
-  const status = hasFailed ? "failed" : hasBlocked ? "blocked" : "completed";
-
-  return {
-    ...run,
-    status,
-    durationSeconds,
-    endedAt: status === "completed" || status === "failed" ? now.toISOString() : undefined,
-    nodeRuns: nextNodeRuns,
-    logs: nextLogs,
-    runtimeSnapshot: runtimeStore,
-    usage: collectWorkflowRunUsage(nextNodeRuns)
-  };
+  return executeWorkflowRun(meeting, template, retryConfig, options, {
+    ...hooks,
+    runId: run.id,
+    resumeFrom: preparedRun
+  });
 }
 
 // ── HELPERS ──

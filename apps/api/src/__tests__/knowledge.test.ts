@@ -4,7 +4,7 @@ import { normalizeKnowledgeSources, retrieveMeetingKnowledge } from "../services
 
 describe("Knowledge retrieval", () => {
   it("normalizes chinese source labels to machine-readable keys", () => {
-    expect(normalizeKnowledgeSources("纪要库、CRM、项目文档")).toBe("meeting_memories,meeting_notes");
+    expect(normalizeKnowledgeSources("纪要库、CRM、项目文档")).toBe("meeting_memories,meeting_notes,knowledge_documents");
   });
 
   it("falls back to memory-store when vector index is empty", async () => {
