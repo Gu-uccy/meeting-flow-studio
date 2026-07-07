@@ -315,7 +315,7 @@ export async function persistWorkflowMemories(meeting: MeetingRecord, run: Produ
   const nextMemories = buildWorkflowMemories(meeting, run);
   const nextIds = new Set(nextMemories.map((m) => m.id));
   ctx.meetingMemories = [...nextMemories, ...ctx.meetingMemories.filter((m) => !nextIds.has(m.id))].sort(sortMemoriesByUpdatedAtDesc);
-  await saveMeetingMemories(ctx.meetingMemories);
+  await saveMeetingMemories(ctx.meetingMemories, ctx.meetings);
   return nextMemories;
 }
 

@@ -15,6 +15,19 @@ import {
   extractConfigValues,
   isLLMAvailable
 } from "./llm.js";
+import { retrieveMeetingKnowledge } from "./knowledgeRetrieval.js";
+import {
+  applyNodeOutputMapping,
+  buildMeetingPayload,
+  buildWorkflowRuntimeContext,
+  createWorkflowRuntimeStore,
+  getPathValue
+} from "./runtimeMapping.js";
+import {
+  buildStructuredOutputSchemaPrompt,
+  extractJsonObject,
+  validateStructuredOutput
+} from "./structuredOutput.js";
 
 // ── SIMPLE CONDITION EVALUATOR ──
 
@@ -219,35 +232,6 @@ function normalizeRuntimeValue(value: unknown): unknown {
   return value;
 }
 
-function getPathValue(source: Record<string, unknown>, path: string): unknown {
-  return path.split(".").reduce<unknown>((current, part) => {
-    if (current == null || typeof current !== "object") {
-      return undefined;
-    }
-
-    return (current as Record<string, unknown>)[part];
-  }, source);
-}
-
-function buildMeetingPayload(meeting: MeetingRecord): Record<string, unknown> {
-  return {
-    attendeeCount: meeting.attendeeCount,
-    meetingGoal: meeting.meetingGoal,
-    meetingId: meeting.id,
-    participants: meeting.participants.map((participant) => participant.name),
-    priority: meeting.priority,
-    title: meeting.title,
-    type: meeting.type
-  };
-}
-
-function buildWorkflowRuntimeContext(meeting: MeetingRecord, nodeResults: Map<string, ProductNodeRun>): Record<string, unknown> {
-  return {
-    meeting: buildMeetingPayload(meeting),
-    node: Object.fromEntries([...nodeResults.entries()].map(([nodeId, run]) => [nodeId, run.outputPayload ?? {}]))
-  };
-}
-
 function buildNodeInputPayload(
   node: ProductWorkflowNode,
   meeting: MeetingRecord,
@@ -303,85 +287,6 @@ function inferNodeOutputType(output: string): AiApplicationOutputField["type"] {
   return "json";
 }
 
-function extractJsonObject(value: string): Record<string, unknown> | null {
-  const trimmed = value.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() ?? trimmed;
-
-  try {
-    const parsed = JSON.parse(candidate);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-    if (start < 0 || end <= start) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(candidate.slice(start, end + 1));
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function coerceOutputValue(field: AiApplicationOutputField, value: unknown): { value: unknown; error?: string } {
-  if (value === undefined || value === null || value === "") {
-    return { value, error: `${field.label || field.key} 缺少输出` };
-  }
-
-  if (field.type === "text") {
-    return { value: typeof value === "string" ? value : JSON.stringify(value) };
-  }
-
-  if (field.type === "number") {
-    const numericValue = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(numericValue)
-      ? { value: numericValue }
-      : { value, error: `${field.label || field.key} 必须是数字` };
-  }
-
-  if (field.type === "boolean") {
-    if (typeof value === "boolean") {
-      return { value };
-    }
-
-    if (typeof value === "string" && ["true", "false"].includes(value.toLowerCase())) {
-      return { value: value.toLowerCase() === "true" };
-    }
-
-    return { value, error: `${field.label || field.key} 必须是布尔值` };
-  }
-
-  if (field.type === "json" && typeof value === "string") {
-    try {
-      return { value: JSON.parse(value) };
-    } catch {
-      return { value, error: `${field.label || field.key} 必须是 JSON` };
-    }
-  }
-
-  return { value };
-}
-
-function validateStructuredOutput(schema: AiApplicationOutputField[], rawOutput: Record<string, unknown>) {
-  const output: Record<string, unknown> = {};
-  const errors: string[] = [];
-
-  for (const field of schema) {
-    const coerced = coerceOutputValue(field, rawOutput[field.key]);
-    if (coerced.error) {
-      errors.push(coerced.error);
-    } else {
-      output[field.key] = coerced.value;
-    }
-  }
-
-  return { output, errors };
-}
-
 function buildMockStructuredOutput(schema: AiApplicationOutputField[], node: ProductWorkflowNode, meeting: MeetingRecord) {
   return Object.fromEntries(
     schema.map((field) => {
@@ -412,6 +317,16 @@ function applyNodeOutputSchema(node: ProductWorkflowNode, meeting: MeetingRecord
     typeof outputPayload.llmContent === "string"
       ? extractJsonObject(outputPayload.llmContent)
       : null;
+
+  if (
+    rawStructuredOutput === null &&
+    typeof outputPayload.llmContent === "string" &&
+    outputPayload.agentRuntime === "llm"
+  ) {
+    const preview = outputPayload.llmContent.trim().slice(0, 280);
+    throw new Error(`模型未返回合法 JSON，无法匹配 Output Schema。原始输出：${preview}${outputPayload.llmContent.length > 280 ? "..." : ""}`);
+  }
+
   const rawOutput =
     rawStructuredOutput ??
     (outputPayload.outputSchemaSource === "mock" || typeof outputPayload.llmContent !== "string"
@@ -434,6 +349,107 @@ function applyNodeOutputSchema(node: ProductWorkflowNode, meeting: MeetingRecord
 
 function configValue(node: ProductWorkflowNode, key: string) {
   return node.configFields.find((field) => field.key === key)?.value.trim() ?? "";
+}
+
+function shouldRunAgentNode(node: ProductWorkflowNode) {
+  return node.executor?.type === "aiApplication" || node.kind === "ai";
+}
+
+async function executeAgentNode(
+  node: ProductWorkflowNode,
+  meeting: MeetingRecord,
+  inputPayload: RuntimePayload
+): Promise<RuntimePayload> {
+  const config = extractConfigValues(node);
+  const meetingCtx = buildMeetingContext(meeting);
+  const outputSchema = getNodeOutputSchema(node);
+  const schemaPrompt = buildStructuredOutputSchemaPrompt(outputSchema);
+  const renderedAgentPrompt = node.agentPromptConfig
+    ? buildNodeAgentPrompt(node.agentPromptConfig, node, meeting, inputPayload)
+    : null;
+  let prompt = renderedAgentPrompt?.userPrompt ?? buildAINodePrompt(config, meetingCtx);
+  const systemPrompt = [renderedAgentPrompt?.systemPrompt, schemaPrompt].filter(Boolean).join("\n\n");
+  if (!renderedAgentPrompt && schemaPrompt) {
+    prompt = `${prompt}\n\n${schemaPrompt}`;
+  }
+  const model = node.agentPromptConfig?.model ?? config["model"] ?? "claude-sonnet-4";
+  const temperature = node.agentPromptConfig?.temperature ?? config["temperature"] ?? 0.5;
+
+  if (isLLMAvailable()) {
+    const result = await callLLM({
+      model,
+      prompt,
+      systemPrompt: systemPrompt || undefined,
+      temperature,
+      maxTokens: node.agentPromptConfig?.maxTokens
+    });
+
+    return {
+      llmContent: result.content,
+      llmModel: result.model,
+      llmPrompt: prompt,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      agentRuntime: "llm"
+    };
+  }
+
+  return {
+    agendaItems: meeting.agendaItems.length,
+    note: "LLM 未接入（ANTHROPIC_API_KEY 未配置），使用模拟输出",
+    outputSchemaSource: "mock",
+    agentRuntime: "mock",
+    ...buildMockStructuredOutput(getNodeOutputSchema(node), node, meeting)
+  };
+}
+
+async function executeToolPresetNode(
+  node: ProductWorkflowNode,
+  meeting: MeetingRecord,
+  inputPayload: RuntimePayload
+): Promise<RuntimePayload> {
+  const toolPreset = configValue(node, "toolPreset");
+
+  if (toolPreset === "google-calendar") {
+    return {
+      channel: "google-calendar",
+      meetingId: meeting.id,
+      syncStatus: "queued",
+      toolPreset,
+      toolResult: {
+        title: meeting.title,
+        startAt: meeting.startAt,
+        endAt: meeting.endAt
+      },
+      message: "已触发 Google 日历同步任务"
+    };
+  }
+
+  if (toolPreset === "feishu-calendar") {
+    return {
+      channel: "feishu-calendar",
+      meetingId: meeting.id,
+      syncStatus: "queued",
+      toolPreset,
+      toolResult: {
+        title: meeting.title,
+        startAt: meeting.startAt,
+        endAt: meeting.endAt
+      },
+      message: "已触发飞书日历同步任务"
+    };
+  }
+
+  if (configValue(node, "toolUrl")) {
+    return executeHttpToolNode(node, meeting, inputPayload);
+  }
+
+  return {
+    actionItems: meeting.actionItems.length,
+    channels: configValue(node, "channels") || "Teams、邮件、任务系统",
+    notifications: Object.values(meeting.notifications).filter(Boolean).length,
+    toolPreset: toolPreset || "notification"
+  };
 }
 
 async function executeHttpToolNode(
@@ -547,68 +563,46 @@ async function executeNodeByKind(
         break;
 
       case "ai": {
-        const config = extractConfigValues(node);
-        const meetingCtx = buildMeetingContext(meeting);
-        const renderedAgentPrompt = node.agentPromptConfig
-          ? buildNodeAgentPrompt(node.agentPromptConfig, node, meeting, inputPayload)
-          : null;
-        const prompt = renderedAgentPrompt?.userPrompt ?? buildAINodePrompt(config, meetingCtx);
-        const model = node.agentPromptConfig?.model ?? config["model"] ?? "claude-sonnet-4";
-        const temperature = node.agentPromptConfig?.temperature ?? config["temperature"] ?? 0.5;
+        outputPayload = await executeAgentNode(node, meeting, inputPayload);
+        break;
+      }
 
-        if (isLLMAvailable()) {
-          const result = await callLLM({
-            model,
-            prompt,
-            systemPrompt: renderedAgentPrompt?.systemPrompt,
-            temperature,
-            maxTokens: node.agentPromptConfig?.maxTokens
-          });
-          outputPayload = {
-            llmContent: result.content,
-            llmModel: result.model,
-            llmPrompt: prompt,
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens
-          };
+      case "knowledge": {
+        const retrieval = await retrieveMeetingKnowledge(meeting, {
+          maxDocs: Number(configValue(node, "maxDocs")) || 8,
+          missingPolicy: configValue(node, "missingPolicy"),
+          sources: configValue(node, "sources")
+        });
+        const enrichedInput = {
+          ...inputPayload,
+          citations: retrieval.citations,
+          contextPack: retrieval.contextPack
+        };
+
+        if (shouldRunAgentNode(node) && node.agentPromptConfig) {
+          const agentOutput = await executeAgentNode(node, meeting, enrichedInput);
+          outputPayload = { ...retrieval, ...agentOutput };
         } else {
-          // Fallback: simulated output
-          outputPayload = {
-            agendaItems: meeting.agendaItems.length,
-            risks: meeting.priority === "high" || meeting.priority === "critical" ? 2 : 1,
-            note: "LLM 未接入（ANTHROPIC_API_KEY 未配置），使用模拟输出",
-            outputSchemaSource: "mock",
-            ...buildMockStructuredOutput(getNodeOutputSchema(node), node, meeting)
-          };
+          outputPayload = retrieval;
         }
         break;
       }
 
-      case "knowledge":
-        outputPayload = {
-          documents: Math.max(1, meeting.participants.length + meeting.actionItems.length),
-          notesReady: Boolean(meeting.notes.trim())
-        };
-        break;
-
       case "decision":
-        outputPayload = {
-          routeDecision:
-            meeting.type === "client" || meeting.attendeeCount > 5
-              ? "needs_review"
-              : "auto_approved"
-        };
+        if (shouldRunAgentNode(node) && node.agentPromptConfig) {
+          outputPayload = await executeAgentNode(node, meeting, inputPayload);
+        } else {
+          outputPayload = {
+            routeDecision:
+              meeting.type === "client" || meeting.attendeeCount > 5
+                ? "needs_review"
+                : "auto_approved"
+          };
+        }
         break;
 
       case "action":
-        if (configValue(node, "toolUrl")) {
-          outputPayload = await executeHttpToolNode(node, meeting, inputPayload);
-        } else {
-          outputPayload = {
-            notifications: Object.values(meeting.notifications).filter(Boolean).length,
-            actionItems: meeting.actionItems.length
-          };
-        }
+        outputPayload = await executeToolPresetNode(node, meeting, inputPayload);
         break;
 
       default:
@@ -735,6 +729,7 @@ export async function executeWorkflowRun(
   const startedAt = new Date();
   const logs: ProductRunLog[] = [];
   const nodeResults = new Map<string, ProductNodeRun>();
+  const runtimeStore = createWorkflowRuntimeStore(meeting);
   const maxRetries = retryConfig?.maxRetries ?? 2;
   const retryDelayMs = retryConfig?.retryDelayMs ?? 1000;
 
@@ -764,7 +759,7 @@ export async function executeWorkflowRun(
 
     if (waveNodes.length === 0) continue;
 
-    const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults);
+    const runtimeContext = buildWorkflowRuntimeContext(meeting, nodeResults, runtimeStore);
     const wavePromises = waveNodes.map(async (nodeInfo) => {
       // Check edge conditions for incoming edges
       const incomingEdges = template.edges.filter((e) => e.target === nodeInfo.node.id);
@@ -840,6 +835,15 @@ export async function executeWorkflowRun(
 
     const waveResults = await Promise.all(wavePromises);
     for (const { nodeId, result } of waveResults) {
+      if (result.status === "success" && result.outputPayload) {
+        const nodeInfo = waveNodes.find((entry) => entry.node.id === nodeId);
+        if (nodeInfo) {
+          const mapped = applyNodeOutputMapping(nodeInfo.node, result.outputPayload, runtimeStore);
+          nodeResults.set(nodeId, { ...result, outputPayload: mapped.outputPayload });
+          continue;
+        }
+      }
+
       nodeResults.set(nodeId, result);
     }
   }
@@ -879,9 +883,19 @@ export async function executeSingleNodeRun(
   inputs?: Record<string, unknown>
 ): Promise<ProductWorkflowRun> {
   const startedAt = new Date();
-  const result = await executeNodeByExecutor(node, meeting, inputs);
+  const runtimeStore = createWorkflowRuntimeStore(meeting);
+  const runtimeContext = buildWorkflowRuntimeContext(meeting, new Map(), runtimeStore);
+  const mergedInputs = { ...runtimeContext, ...inputs };
+  const result = await executeNodeByExecutor(node, meeting, mergedInputs);
+  const finalResult =
+    result.status === "success" && result.outputPayload
+      ? {
+          ...result,
+          outputPayload: applyNodeOutputMapping(node, result.outputPayload, runtimeStore).outputPayload
+        }
+      : result;
   const endedAt = new Date();
-  const status = result.status === "failed" ? "failed" : result.status === "blocked" ? "blocked" : "completed";
+  const status = finalResult.status === "failed" ? "failed" : finalResult.status === "blocked" ? "blocked" : "completed";
 
   return {
     id: `run-node-${node.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -899,7 +913,7 @@ export async function executeSingleNodeRun(
         configFields: node.configFields.map((field) => ({ ...field }))
       }
     ],
-    nodeRuns: [result],
+    nodeRuns: [finalResult],
     logs: [
       {
         id: `log-${Date.now()}-${node.id}-single-start`,
@@ -911,11 +925,11 @@ export async function executeSingleNodeRun(
       {
         id: `log-${Date.now()}-${node.id}-single-done`,
         time: logTime(endedAt),
-        level: result.status === "success" ? "success" : result.status === "blocked" ? "warning" : "error",
+        level: finalResult.status === "success" ? "success" : finalResult.status === "blocked" ? "warning" : "error",
         message:
-          result.status === "success"
+          finalResult.status === "success"
             ? `${node.title} 单节点调试完成`
-            : result.errorMessage ?? `${node.title} 单节点调试未完成`,
+            : finalResult.errorMessage ?? `${node.title} 单节点调试未完成`,
         nodeId: node.id
       }
     ]
