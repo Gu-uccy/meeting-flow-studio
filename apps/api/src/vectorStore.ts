@@ -1,8 +1,6 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import type { MeetingMemory, MeetingRecord } from "@meeting-flow/shared";
+import type { KnowledgeDocument } from "./knowledgeDocumentStore.js";
+import { withDatabase } from "./lib/db/index.js";
 import {
   cosineSimilarity,
   embedText,
@@ -21,41 +19,13 @@ export type VectorChunkRecord = {
   kind: string;
   meetingId: string;
   sourceId: string;
-  sourceType: "memory" | "meeting_notes";
+  sourceType: "memory" | "meeting_notes" | "document";
   updatedAt: string;
 };
 
 export type VectorSearchHit = VectorChunkRecord & {
   similarity: number;
 };
-
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(currentDir, "../data");
-const databaseFile = path.join(dataDir, "meetings.db");
-
-function ensureDataDir() {
-  mkdirSync(dataDir, { recursive: true });
-}
-
-function openDatabase() {
-  ensureDataDir();
-  const database = new DatabaseSync(databaseFile);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS knowledge_vector_chunks (
-      id TEXT PRIMARY KEY,
-      meeting_id TEXT NOT NULL,
-      source_type TEXT NOT NULL,
-      source_id TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      content TEXT NOT NULL,
-      embedding_model TEXT NOT NULL,
-      embedding_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  database.exec("CREATE INDEX IF NOT EXISTS idx_knowledge_vector_chunks_meeting_id ON knowledge_vector_chunks(meeting_id)");
-  return database;
-}
 
 function serializeEmbedding(embedding: number[]) {
   return JSON.stringify(embedding);
@@ -90,7 +60,7 @@ function rowToChunk(row: {
   };
 }
 
-function buildChunks(memories: MeetingMemory[], meetings: MeetingRecord[]) {
+function buildChunks(memories: MeetingMemory[], meetings: MeetingRecord[], documents: KnowledgeDocument[] = []) {
   const chunkingOptions = getTextChunkingOptions();
   const chunks: Array<Omit<VectorChunkRecord, "embedding" | "embeddingModel">> = [];
 
@@ -132,45 +102,61 @@ function buildChunks(memories: MeetingMemory[], meetings: MeetingRecord[]) {
     }
   }
 
+  for (const document of documents) {
+    if (!document.content.trim()) {
+      continue;
+    }
+
+    const parts = splitTextIntoChunks(document.content, chunkingOptions);
+    for (const part of parts) {
+      chunks.push({
+        id: buildVectorChunkId(document.id, part.index, parts.length),
+        meetingId: document.meetingId,
+        sourceType: "document",
+        sourceId: document.id,
+        kind: "summary",
+        content: `[${document.title}]\n${part.content}`,
+        updatedAt: document.updatedAt
+      });
+    }
+  }
+
   return chunks;
 }
 
-export async function syncVectorKnowledgeIndex(memories: MeetingMemory[], meetings: MeetingRecord[] = []) {
-  const database = openDatabase();
+export async function syncVectorKnowledgeIndex(
+  memories: MeetingMemory[],
+  meetings: MeetingRecord[] = [],
+  documents: KnowledgeDocument[] = []
+) {
   const provider = getEmbeddingProvider();
-  const chunks = buildChunks(memories, meetings);
+  const chunks = buildChunks(memories, meetings, documents);
   const embeddings = await embedTexts(chunks.map((chunk) => chunk.content));
 
-  database.exec("BEGIN");
-  try {
-    database.exec("DELETE FROM knowledge_vector_chunks");
-    const insert = database.prepare(`
-      INSERT INTO knowledge_vector_chunks (
-        id, meeting_id, source_type, source_id, kind, content, embedding_model, embedding_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  await withDatabase(async (db) => {
+    await db.transaction(async (tx) => {
+      await tx.exec("DELETE FROM knowledge_vector_chunks");
+      const insert = tx.prepare(`
+        INSERT INTO knowledge_vector_chunks (
+          id, meeting_id, source_type, source_id, kind, content, embedding_model, embedding_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
 
-    chunks.forEach((chunk, index) => {
-      insert.run(
-        chunk.id,
-        chunk.meetingId,
-        chunk.sourceType,
-        chunk.sourceId,
-        chunk.kind,
-        chunk.content,
-        provider,
-        serializeEmbedding(embeddings[index] ?? []),
-        chunk.updatedAt
-      );
+      for (const [index, chunk] of chunks.entries()) {
+        await insert.run(
+          chunk.id,
+          chunk.meetingId,
+          chunk.sourceType,
+          chunk.sourceId,
+          chunk.kind,
+          chunk.content,
+          provider,
+          serializeEmbedding(embeddings[index] ?? []),
+          chunk.updatedAt
+        );
+      }
     });
-
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  } finally {
-    database.close();
-  }
+  });
 
   return {
     chunkCount: chunks.length,
@@ -186,19 +172,18 @@ export async function searchVectorKnowledge(params: {
   topK?: number;
   minSimilarity?: number;
 }): Promise<VectorSearchHit[]> {
-  const database = openDatabase();
   const query = params.query.trim();
   const topK = Math.max(1, params.topK ?? 6);
   const minSimilarity = params.minSimilarity ?? 0.08;
 
-  try {
-    const rows = database
+  return withDatabase(async (db) => {
+    const rows = await db
       .prepare(`
         SELECT id, meeting_id, source_type, source_id, kind, content, embedding_model, embedding_json, updated_at
         FROM knowledge_vector_chunks
         WHERE meeting_id = ?
       `)
-      .all(params.meetingId) as Array<{
+      .all<{
         content: string;
         embedding_json: string;
         embedding_model: string;
@@ -208,7 +193,7 @@ export async function searchVectorKnowledge(params: {
         source_id: string;
         source_type: string;
         updated_at: string;
-      }>;
+      }>(params.meetingId);
 
     if (rows.length === 0 || !query) {
       return [];
@@ -226,23 +211,17 @@ export async function searchVectorKnowledge(params: {
       .filter((hit) => hit.similarity >= minSimilarity)
       .sort((left, right) => right.similarity - left.similarity)
       .slice(0, topK);
-  } finally {
-    database.close();
-  }
+  });
 }
 
 export async function getVectorIndexStats() {
-  const database = openDatabase();
-
-  try {
-    const row = database.prepare("SELECT COUNT(*) as count FROM knowledge_vector_chunks").get() as { count: number };
+  return withDatabase(async (db) => {
+    const row = await db.prepare("SELECT COUNT(*) as count FROM knowledge_vector_chunks").get<{ count: number }>();
     return {
-      chunkCount: row.count ?? 0,
+      chunkCount: row?.count ?? 0,
       chunking: getTextChunkingOptions(),
       embeddingModel: getEmbeddingProvider(),
       dimensions: getEmbeddingDimensions()
     };
-  } finally {
-    database.close();
-  }
+  });
 }

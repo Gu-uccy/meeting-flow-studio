@@ -1,8 +1,5 @@
 import crypto from "node:crypto";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { withDatabase } from "./lib/db/index.js";
 
 export type AiProvider = "anthropic";
 
@@ -25,33 +22,6 @@ export type AiKeyStatus = {
   keyHint: string;
   updatedAt: string;
 };
-
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(currentDir, "../data");
-const databaseFile = path.join(dataDir, "meetings.db");
-
-function ensureDataDir() {
-  mkdirSync(dataDir, { recursive: true });
-}
-
-function openDatabase() {
-  ensureDataDir();
-  const database = new DatabaseSync(databaseFile);
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS ai_model_keys (
-      user_id TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      encrypted_key TEXT NOT NULL,
-      iv TEXT NOT NULL,
-      auth_tag TEXT NOT NULL,
-      key_hint TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (user_id, provider)
-    )
-  `);
-  return database;
-}
 
 function encryptionKey() {
   const secret =
@@ -98,28 +68,26 @@ function keyHint(apiKey: string) {
   return `****${trimmed.slice(-4)}`;
 }
 
-function readRecord(database: DatabaseSync, userId: string, provider: AiProvider) {
-  return database
+async function readRecord(db: Parameters<Parameters<typeof withDatabase>[0]>[0], userId: string, provider: AiProvider) {
+  return db
     .prepare(`
       SELECT user_id, provider, encrypted_key, iv, auth_tag, key_hint, created_at, updated_at
       FROM ai_model_keys
       WHERE user_id = ? AND provider = ?
     `)
-    .get(userId, provider) as
-    | {
-        user_id: string;
-        provider: AiProvider;
-        encrypted_key: string;
-        iv: string;
-        auth_tag: string;
-        key_hint: string;
-        created_at: string;
-        updated_at: string;
-      }
-    | undefined;
+    .get<{
+      user_id: string;
+      provider: AiProvider;
+      encrypted_key: string;
+      iv: string;
+      auth_tag: string;
+      key_hint: string;
+      created_at: string;
+      updated_at: string;
+    }>(userId, provider);
 }
 
-function toRecord(row: NonNullable<ReturnType<typeof readRecord>>): AiKeyRecord {
+function toRecord(row: NonNullable<Awaited<ReturnType<typeof readRecord>>>): AiKeyRecord {
   return {
     userId: row.user_id,
     provider: row.provider,
@@ -133,21 +101,15 @@ function toRecord(row: NonNullable<ReturnType<typeof readRecord>>): AiKeyRecord 
 }
 
 export async function getUserAiApiKey(userId: string, provider: AiProvider = "anthropic") {
-  const database = openDatabase();
-
-  try {
-    const row = readRecord(database, userId, provider);
+  return withDatabase(async (db) => {
+    const row = await readRecord(db, userId, provider);
     return row ? decryptApiKey(toRecord(row)) : "";
-  } finally {
-    database.close();
-  }
+  });
 }
 
 export async function getAiKeyStatus(userId: string, provider: AiProvider = "anthropic"): Promise<AiKeyStatus> {
-  const database = openDatabase();
-
-  try {
-    const row = readRecord(database, userId, provider);
+  return withDatabase(async (db) => {
+    const row = await readRecord(db, userId, provider);
     const isUserConfigured = Boolean(row);
     const isEnvironmentConfigured = Boolean(process.env["ANTHROPIC_API_KEY"]);
 
@@ -159,9 +121,7 @@ export async function getAiKeyStatus(userId: string, provider: AiProvider = "ant
       keyHint: row?.key_hint ?? "",
       updatedAt: row?.updated_at ?? ""
     };
-  } finally {
-    database.close();
-  }
+  });
 }
 
 export async function saveUserAiApiKey(userId: string, apiKey: string, provider: AiProvider = "anthropic") {
@@ -170,13 +130,11 @@ export async function saveUserAiApiKey(userId: string, apiKey: string, provider:
     throw new Error("API Key 不能为空");
   }
 
-  const database = openDatabase();
-
-  try {
-    const existing = readRecord(database, userId, provider);
+  return withDatabase(async (db) => {
+    const existing = await readRecord(db, userId, provider);
     const now = new Date().toISOString();
     const encrypted = encryptApiKey(trimmed);
-    const insert = database.prepare(`
+    const insert = db.prepare(`
       INSERT INTO ai_model_keys (user_id, provider, encrypted_key, iv, auth_tag, key_hint, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, provider) DO UPDATE SET
@@ -187,7 +145,7 @@ export async function saveUserAiApiKey(userId: string, apiKey: string, provider:
         updated_at = excluded.updated_at
     `);
 
-    insert.run(
+    await insert.run(
       userId,
       provider,
       encrypted.encryptedKey,
@@ -206,21 +164,13 @@ export async function saveUserAiApiKey(userId: string, apiKey: string, provider:
       keyHint: keyHint(trimmed),
       updatedAt: now
     };
-  } finally {
-    database.close();
-  }
+  });
 }
 
 export async function deleteUserAiApiKey(userId: string, provider: AiProvider = "anthropic") {
-  const database = openDatabase();
-
-  try {
-    database
-      .prepare("DELETE FROM ai_model_keys WHERE user_id = ? AND provider = ?")
-      .run(userId, provider);
-  } finally {
-    database.close();
-  }
+  await withDatabase(async (db) => {
+    await db.prepare("DELETE FROM ai_model_keys WHERE user_id = ? AND provider = ?").run(userId, provider);
+  });
 
   return getAiKeyStatus(userId, provider);
 }
