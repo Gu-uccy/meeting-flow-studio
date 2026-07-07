@@ -18,10 +18,12 @@ type WorkflowCanvasInspectorProps = {
   isCanvasDirty: boolean;
   isWorkflowActionBusy: boolean;
   onDeleteSelectedEdge: () => void;
+  onOpenNodeAgent?: (templateId: string, nodeId: string) => void;
   onResetCanvas: () => void;
   onSaveCanvas: () => void;
   selectedEdge: ProductWorkflowEdge | null;
   selectedNode: ProductWorkflowNode | null;
+  selectedTemplateId: string;
   updateCanvasEdge: (edgeId: string, update: (edge: ProductWorkflowEdge) => ProductWorkflowEdge) => void;
   updateCanvasNode: (nodeId: string, update: (node: ProductWorkflowNode) => ProductWorkflowNode) => void;
 };
@@ -31,13 +33,20 @@ export function WorkflowCanvasInspector({
   isCanvasDirty,
   isWorkflowActionBusy,
   onDeleteSelectedEdge,
+  onOpenNodeAgent,
   onResetCanvas,
   onSaveCanvas,
   selectedEdge,
   selectedNode,
+  selectedTemplateId,
   updateCanvasEdge,
   updateCanvasNode
 }: WorkflowCanvasInspectorProps) {
+  const canOpenNodeAgent = Boolean(
+    selectedNode
+      && onOpenNodeAgent
+      && ["ai", "knowledge", "decision", "action"].includes(selectedNode.kind)
+  );
   return (
     <aside className="ide-inspector" aria-label={selectedEdge ? "连线配置面板" : "节点配置面板"}>
       <div className="ide-pane-header ide-pane-header--stacked">
@@ -180,6 +189,19 @@ export function WorkflowCanvasInspector({
                 )}
               </label>
             ))}
+            {canOpenNodeAgent && selectedNode && (
+              <div className="ide-config-actions ide-config-actions--agent">
+                <button
+                  className="ghost-button"
+                  disabled={isWorkflowActionBusy}
+                  onClick={() => onOpenNodeAgent?.(selectedTemplateId, selectedNode.id)}
+                  type="button"
+                >
+                  在节点智能体管理中编辑
+                </button>
+                <p className="ide-config-hint">配置 Prompt、Schema、字段映射与版本，类似 Dify 的 LLM / Tool 节点编辑器。</p>
+              </div>
+            )}
             <div className="ide-config-actions">
               <button className="ghost-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={onResetCanvas} type="button">
                 放弃修改
@@ -196,45 +218,69 @@ export function WorkflowCanvasInspector({
 }
 
 export function WorkflowCanvasEditorToolbar({
+  canvasNodes,
+  isCanvasDirty,
+  isWorkflowActionBusy,
+  onAddNode,
+  onDeleteSelectedNode,
+  onResetCanvas,
+  onSaveCanvas,
   onSelectTemplate,
+  selectedNode,
   selectedTemplateId,
   workflowTemplates
 }: {
+  canvasNodes: ProductWorkflowNode[];
+  isCanvasDirty: boolean;
+  isWorkflowActionBusy: boolean;
+  onAddNode: () => void;
+  onDeleteSelectedNode: () => void;
+  onResetCanvas: () => void;
+  onSaveCanvas: () => void;
   onSelectTemplate: (templateId: string) => void;
+  selectedNode: ProductWorkflowNode | null;
   selectedTemplateId: string;
   workflowTemplates: Array<{ id: string; name: string }>;
 }) {
   return (
     <div className="workflow-template-row">
-      <div className="template-switcher ide-tabs" aria-label="模板选择">
-        {workflowTemplates.map((template) => (
-          <button
-            className={template.id === selectedTemplateId ? "is-active" : ""}
-            key={template.id}
-            onClick={() => onSelectTemplate(template.id)}
-            type="button"
-          >
-            {template.name}
-          </button>
-        ))}
+      <div className="workflow-template-row__main">
+        <div className="template-switcher ide-tabs" aria-label="模板选择">
+          {workflowTemplates.map((template) => (
+            <button
+              className={template.id === selectedTemplateId ? "is-active" : ""}
+              key={template.id}
+              onClick={() => onSelectTemplate(template.id)}
+              type="button"
+            >
+              {template.name}
+            </button>
+          ))}
+        </div>
+        <div className="node-palette node-palette--toolbar" aria-label="节点面板">
+          <span>拖入画布</span>
+          {meetingNodeKinds.map((kind) => (
+            <div
+              className="node-palette__item"
+              draggable
+              key={kind}
+              onDragStart={(event) => {
+                event.dataTransfer.setData("application/reactflow-kind", kind);
+                event.dataTransfer.effectAllowed = "move";
+              }}
+              title={`拖入画布创建 ${meetingNodeKindLabels[kind]} 节点`}
+            >
+              <i style={{ background: toneByKind[kind] }} />
+              <span>{meetingNodeKindLabels[kind]}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="node-palette node-palette--toolbar" aria-label="节点面板">
-        <span>拖入画布</span>
-        {meetingNodeKinds.map((kind) => (
-          <div
-            className="node-palette__item"
-            draggable
-            key={kind}
-            onDragStart={(event) => {
-              event.dataTransfer.setData("application/reactflow-kind", kind);
-              event.dataTransfer.effectAllowed = "move";
-            }}
-            title={`拖入画布创建 ${meetingNodeKindLabels[kind]} 节点`}
-          >
-            <i style={{ background: toneByKind[kind] }} />
-            <span>{meetingNodeKindLabels[kind]}</span>
-          </div>
-        ))}
+      <div className="canvas-editor-actions canvas-editor-actions--toolbar" aria-label="画布编辑">
+        <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onAddNode} type="button">添加节点</button>
+        <button className="ghost-button" disabled={isWorkflowActionBusy || !selectedNode || canvasNodes.length <= 1} onClick={onDeleteSelectedNode} type="button">删除节点</button>
+        <button className="ghost-button" disabled={isWorkflowActionBusy || !isCanvasDirty} onClick={onResetCanvas} type="button">撤销修改</button>
+        <button className="primary-button" disabled={isWorkflowActionBusy || !isCanvasDirty} onClick={() => void onSaveCanvas()} type="button">保存画布</button>
       </div>
     </div>
   );

@@ -901,16 +901,16 @@ export const miniDifyNodeCapabilityCatalog: MiniDifyNodeCapability[] = [
     purpose: "调用模型执行提示词，把会议目标、上下文和变量转换为结构化输出。",
     requiredConfig: ["model", "prompt", "temperature"],
     runtimeOutput: ["text", "structured fields", "token usage"],
-    maturity: "partial"
+    maturity: "ready"
   },
   {
     kind: "knowledge",
     name: "知识检索",
     difyLikeName: "Knowledge Retrieval",
-    purpose: "从纪要、项目文档或业务系统中召回运行上下文。",
+    purpose: "基于向量相似度从会议记忆与会前纪要中召回上下文。",
     requiredConfig: ["sources", "max docs", "missing policy"],
     runtimeOutput: ["context pack", "citations"],
-    maturity: "partial"
+    maturity: "ready"
   },
   {
     kind: "decision",
@@ -926,9 +926,9 @@ export const miniDifyNodeCapabilityCatalog: MiniDifyNodeCapability[] = [
     name: "工具调用",
     difyLikeName: "Tool",
     purpose: "把运行结果同步到日历、通知渠道、任务系统或外部 API。",
-    requiredConfig: ["channels", "retry", "output mapping"],
+    requiredConfig: ["tool preset", "channels", "retry", "output mapping"],
     runtimeOutput: ["tool result", "side effects"],
-    maturity: "partial"
+    maturity: "ready"
   }
 ];
 
@@ -1192,6 +1192,8 @@ const commonMeetingNodes: ProductWorkflowNode[] = [
     outputs: ["notifications", "actionItems"],
     configFields: [
       { key: "channels", label: "通知渠道", value: "Teams、邮件、任务系统", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "google-calendar", kind: "select" },
+      { key: "toolUrl", label: "HTTP 工具地址", value: "", kind: "text" },
       { key: "retry", label: "失败重试", value: "开启", kind: "toggle" },
       { key: "minutesSync", label: "纪要同步", value: "会议结束后自动同步", kind: "text" }
     ]

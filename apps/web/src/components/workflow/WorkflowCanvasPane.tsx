@@ -39,6 +39,7 @@ type WorkflowCanvasPaneProps = {
   isCanvasZoomFocused: boolean;
   isWorkflowActionBusy: boolean;
   isWorkflowDetailOpen: boolean;
+  isWorkflowMoreOpen: boolean;
   onAddNode: () => void;
   onAdvanceWorkflowRun: () => void;
   onConnect?: (connection: Connection) => void;
@@ -58,6 +59,7 @@ type WorkflowCanvasPaneProps = {
   onSetCanvasEditMode: (value: boolean) => void;
   onSetCanvasZoomFocused: (value: boolean) => void;
   onSetWorkflowDetailOpen: (value: boolean | ((current: boolean) => boolean)) => void;
+  onSetWorkflowMoreOpen: (value: boolean) => void;
   onStartWorkflowRun: () => void;
   selectedInputPayload: Array<{ key: string; value: string }>;
   selectedMeeting: MeetingRecord | null;
@@ -76,17 +78,80 @@ type WorkflowCanvasPaneProps = {
   isValidConnection: (connection: Connection) => boolean;
 };
 
+type WorkflowCanvasHeaderProps = Pick<
+  WorkflowCanvasPaneProps,
+  | "isCanvasDirty"
+  | "isCanvasEditMode"
+  | "isWorkflowDetailOpen"
+  | "isWorkflowMoreOpen"
+  | "onSetCanvasEditMode"
+  | "onSetWorkflowDetailOpen"
+  | "onSetWorkflowMoreOpen"
+>;
+
+export function WorkflowCanvasHeader(props: WorkflowCanvasHeaderProps) {
+  const {
+    isCanvasDirty,
+    isCanvasEditMode,
+    isWorkflowDetailOpen,
+    isWorkflowMoreOpen,
+    onSetCanvasEditMode,
+    onSetWorkflowDetailOpen,
+    onSetWorkflowMoreOpen
+  } = props;
+
+  const showRunView = !isCanvasEditMode && !isWorkflowDetailOpen && !isWorkflowMoreOpen;
+
+  const openRunView = () => {
+    onSetCanvasEditMode(false);
+    onSetWorkflowDetailOpen(false);
+    onSetWorkflowMoreOpen(false);
+  };
+
+  const modes = [
+    { id: "run", label: "运行视图", active: showRunView, onClick: openRunView },
+    { id: "edit", label: "编辑画布", active: isCanvasEditMode, onClick: () => { openRunView(); onSetCanvasEditMode(true); } },
+    { id: "detail", label: "详情面板", active: isWorkflowDetailOpen, onClick: () => { openRunView(); onSetWorkflowDetailOpen(true); } },
+    { id: "more", label: "拓展工具", active: isWorkflowMoreOpen, onClick: () => { openRunView(); onSetWorkflowMoreOpen(true); } }
+  ] as const;
+
+  return (
+    <div className="ide-pane-header ide-pane-header--workflow workflow-shell__header workflow-shell__header--compact">
+      <div className="workflow-title-block">
+        <strong>流程画布</strong>
+        <p className={isCanvasDirty ? "" : "is-placeholder"}>画布有未保存修改</p>
+      </div>
+
+      <div className="workflow-mode-switcher workflow-mode-switcher--quad" aria-label="流程视图模式">
+        {modes.map((mode) => (
+          <button
+            aria-pressed={mode.active}
+            className={`workflow-mode-switcher__button${mode.active ? " is-active" : ""}`}
+            key={mode.id}
+            onClick={mode.onClick}
+            type="button"
+          >
+            {mode.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
   const {
     actionCount,
     availableRuns,
     blockedNodeRun,
+    canvasNodes,
     canvasWrapperRef,
     isCanvasDirty,
     isCanvasEditMode,
     isCanvasZoomFocused,
     isWorkflowActionBusy,
     isWorkflowDetailOpen,
+    isWorkflowMoreOpen,
     onAddNode,
     onAdvanceWorkflowRun,
     onConnect,
@@ -103,16 +168,11 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
     onSaveCanvas,
     onSelectRun,
     onSelectTemplate,
-    onSetCanvasEditMode,
     onSetCanvasZoomFocused,
-    onSetWorkflowDetailOpen,
     onStartWorkflowRun,
-    selectedInputPayload,
     selectedMeeting,
     selectedNode,
-    selectedNodeConfigSnapshot,
     selectedNodeRun,
-    selectedOutputPayload,
     selectedRun,
     selectedTemplate,
     selectedTemplateId,
@@ -129,44 +189,56 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
 
   return (
     <div className="ide-canvas-pane">
-      <div className="ide-pane-header ide-pane-header--workflow">
-        <div className="workflow-title-block">
-          <strong>流程画布</strong>
-          {isCanvasDirty && <p>画布有未保存修改</p>}
-        </div>
+      <div className="ide-canvas-pane__body">
+      {isCanvasEditMode && (
+        <WorkflowCanvasEditorToolbar
+          canvasNodes={canvasNodes}
+          isCanvasDirty={isCanvasDirty}
+          isWorkflowActionBusy={isWorkflowActionBusy}
+          onAddNode={onAddNode}
+          onDeleteSelectedNode={onDeleteSelectedNode}
+          onResetCanvas={onResetCanvas}
+          onSaveCanvas={onSaveCanvas}
+          onSelectTemplate={onSelectTemplate}
+          selectedNode={selectedNode}
+          selectedTemplateId={selectedTemplateId}
+          workflowTemplates={workflowTemplates}
+        />
+      )}
 
-        <div className="workflow-mode-switcher" aria-label="流程视图模式">
-          <button
-            className={!isCanvasEditMode && !isWorkflowDetailOpen ? "primary-button" : "ghost-button"}
-            onClick={() => { onSetWorkflowDetailOpen(false); onSetCanvasEditMode(false); }}
-            type="button"
-          >
-            运行视图
-          </button>
-          <button
-            className={isCanvasEditMode ? "primary-button" : "ghost-button"}
-            onClick={() => { onSetWorkflowDetailOpen(false); onSetCanvasEditMode(true); }}
-            type="button"
-          >
-            编辑画布
-          </button>
-          <button
-            className={isWorkflowDetailOpen ? "primary-button" : "ghost-button"}
-            onClick={() => { onSetCanvasEditMode(false); onSetWorkflowDetailOpen((current) => !current); }}
-            type="button"
-          >
-            {isWorkflowDetailOpen ? "关闭详情" : "详情面板"}
-          </button>
-        </div>
+      {!isCanvasEditMode && !isWorkflowDetailOpen && !isWorkflowMoreOpen && (
+        <div className="workflow-canvas-summary" aria-label="流程运行与当前会议">
+          <div className="workflow-canvas-summary__main">
+            {selectedNode && (
+              <div className="ide-runtime-grid" aria-label="流程运行状态">
+                <div><span>运行状态</span><strong>{selectedRun ? runStatusLabels[selectedRun.status] : "暂无运行"}</strong></div>
+                <div><span>当前节点</span><strong>{selectedNodeRun ? nodeRunLabels[selectedNodeRun.status] : "未运行"}</strong></div>
+                <div><span>行动项</span><strong>{actionCount} 项</strong></div>
+              </div>
+            )}
 
-        <div className="workflow-header-actions">
-          {!isCanvasEditMode && !isWorkflowDetailOpen && (
-            <div className="workflow-run-actions" aria-label="流程运行操作">
-              {selectedRun && (
-                <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={() => void onRetryWorkflowRun()} type="button">
-                  重新运行
-                </button>
+            <section className="ide-current-meeting" aria-label="当前会议">
+              <span>当前会议</span>
+              {selectedMeeting ? (
+                <>
+                  <strong>{selectedMeeting.title}</strong>
+                  <p>{meetingStatusLabels[selectedMeeting.status]} / {durationLabel(selectedMeeting.durationMinutes)}</p>
+                  <small>{formatDateRange(selectedMeeting.startAt, selectedMeeting.endAt)}</small>
+                </>
+              ) : (
+                <>
+                  <strong>未选择会议</strong>
+                  <p>选择会议后可运行模板并同步日历。</p>
+                </>
               )}
+            </section>
+          </div>
+
+          {!isWorkflowDetailOpen && !isWorkflowMoreOpen && (
+            <div className="workflow-run-actions workflow-run-actions--summary" aria-label="流程运行操作">
+              <button className="ghost-button" disabled={!selectedRun || isWorkflowActionBusy} onClick={() => void onRetryWorkflowRun()} type="button">
+                重新运行
+              </button>
               <button
                 className="primary-button"
                 disabled={!selectedMeeting || !selectedTemplate || isWorkflowActionBusy}
@@ -177,94 +249,8 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
               </button>
             </div>
           )}
-
-          {isCanvasEditMode && (
-            <div className="canvas-editor-actions" aria-label="画布编辑">
-              <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={onAddNode} type="button">添加节点</button>
-              <button className="ghost-button" disabled={isWorkflowActionBusy || !selectedNode || props.canvasNodes.length <= 1} onClick={onDeleteSelectedNode} type="button">删除节点</button>
-              <button className="ghost-button" disabled={isWorkflowActionBusy || !isCanvasDirty} onClick={onResetCanvas} type="button">撤销修改</button>
-              <button className="primary-button" disabled={isWorkflowActionBusy || !isCanvasDirty} onClick={() => void onSaveCanvas()} type="button">保存画布</button>
-            </div>
-          )}
         </div>
-
-        {isCanvasEditMode && (
-          <WorkflowCanvasEditorToolbar
-            onSelectTemplate={onSelectTemplate}
-            selectedTemplateId={selectedTemplateId}
-            workflowTemplates={workflowTemplates}
-          />
-        )}
-      </div>
-
-      <div className="workflow-canvas-summary" aria-label="流程运行与当前会议">
-        {selectedNode && (
-          <>
-            {isCanvasEditMode && (
-              <div className="node-payload">
-                <section>
-                  <span>本次运行</span>
-                  <div>
-                    <code>{selectedRun ? runStatusLabels[selectedRun.status] : "暂无运行"}</code>
-                    <code>{selectedNodeRun ? nodeRunLabels[selectedNodeRun.status] : "节点未运行"}</code>
-                    <code>{selectedRun ? `${selectedRun.durationSeconds}s` : "0s"}</code>
-                  </div>
-                </section>
-                <section>
-                  <span>输入</span>
-                  <div>
-                    {selectedInputPayload.length > 0 ? selectedInputPayload.map((item) => <code key={item.key}>{item.key}: {item.value}</code>) : <code>暂无输入</code>}
-                  </div>
-                </section>
-                <section>
-                  <span>输出</span>
-                  <div>
-                    {selectedOutputPayload.length > 0 ? selectedOutputPayload.map((item) => <code key={item.key}>{item.key}: {item.value}</code>) : <code>暂无输出</code>}
-                  </div>
-                </section>
-                <section>
-                  <span>运行配置快照</span>
-                  <div>
-                    {selectedNodeConfigSnapshot?.configFields.length ? (
-                      selectedNodeConfigSnapshot.configFields.map((field) => <code key={field.key}>{field.label}: {field.value}</code>)
-                    ) : (
-                      <code>使用当前节点配置</code>
-                    )}
-                  </div>
-                </section>
-                {selectedNodeRun?.errorMessage && (
-                  <section className="node-payload__error">
-                    <span>异常</span>
-                    <p>{selectedNodeRun.errorMessage}</p>
-                  </section>
-                )}
-              </div>
-            )}
-
-            <div className="ide-runtime-grid" aria-label="流程运行状态">
-              <div><span>运行状态</span><strong>{selectedRun ? runStatusLabels[selectedRun.status] : "暂无运行"}</strong></div>
-              <div><span>当前节点</span><strong>{selectedNodeRun ? nodeRunLabels[selectedNodeRun.status] : "未运行"}</strong></div>
-              <div><span>行动项</span><strong>{actionCount} 项</strong></div>
-            </div>
-          </>
-        )}
-
-        <section className="ide-current-meeting" aria-label="当前会议">
-          <span>当前会议</span>
-          {selectedMeeting ? (
-            <>
-              <strong>{selectedMeeting.title}</strong>
-              <p>{meetingStatusLabels[selectedMeeting.status]} / {durationLabel(selectedMeeting.durationMinutes)}</p>
-              <small>{formatDateRange(selectedMeeting.startAt, selectedMeeting.endAt)}</small>
-            </>
-          ) : (
-            <>
-              <strong>未选择会议</strong>
-              <p>选择会议后可运行模板并同步日历。</p>
-            </>
-          )}
-        </section>
-      </div>
+      )}
 
       <div
         className={`canvas workflow-canvas ide-canvas${isCanvasZoomFocused ? " is-zoom-focused" : ""}`}
@@ -290,7 +276,7 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
           edgesFocusable
           elementsSelectable
           fitView
-          fitViewOptions={{ padding: 0.3 }}
+          fitViewOptions={{ padding: 0.55, maxZoom: 0.95 }}
           isValidConnection={isValidConnection}
           nodes={workflowNodes}
           nodesConnectable={isCanvasEditMode}
@@ -329,6 +315,7 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
         </ReactFlow>
       </div>
 
+      {!isCanvasEditMode && (
       <div className="runs-panel" aria-label="运行记录">
         <div className="runs-panel__list">
           {availableRuns.length > 0 ? (
@@ -369,6 +356,8 @@ export function WorkflowCanvasPane(props: WorkflowCanvasPaneProps) {
             )}
           </div>
         )}
+      </div>
+      )}
       </div>
     </div>
   );

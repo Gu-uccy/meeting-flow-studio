@@ -19,24 +19,22 @@ export function WorkspacePage() {
   const blockedRunCount = workflow.runs.filter(
     (run) => run.status === "blocked" || run.nodeRuns.some((nodeRun) => nodeRun.status === "blocked")
   ).length;
-  const currentMeetingText = meetings.selectedMeeting
-    ? `${meetingStatusLabels[meetings.selectedMeeting.status]} / ${meetings.selectedMeeting.host} / ${meetings.selectedMeeting.attendeeCount} 人`
-    : "选择会议后运行流程";
+  const subtitle = meetings.selectedMeeting
+    ? `${meetingStatusLabels[meetings.selectedMeeting.status]} · ${meetings.selectedMeeting.host} · ${meetings.selectedMeeting.attendeeCount} 人`
+    : "从左侧选择会议，在画布中运行流程";
 
   return (
     <>
-      <section className="workbench-commandbar workbench-commandbar--compact" aria-label="工作台操作">
-        <div>
+      <section className="workbench-commandbar workbench-commandbar--compact workbench-commandbar--focused" aria-label="工作台操作">
+        <div className="workbench-commandbar__lead">
           <span className="section-kicker">Workspace</span>
           <h1>{meetings.selectedMeeting?.title ?? "会议流程工作台"}</h1>
-          <p>{currentMeetingText}</p>
+          <p>{subtitle}</p>
         </div>
-        <div className="workspace-quick-stats" aria-label="工作台概览">
-          <span className="workspace-stat-chip">{meetings.filteredMeetings.length} 场筛选结果</span>
-          <span className="workspace-stat-chip">{derived.todayMeetingCount} 场今日会议</span>
-          <span className={`workspace-stat-chip${blockedRunCount > 0 ? " workspace-stat-chip--alert" : ""}`}>
-            {blockedRunCount} 个阻塞流程
-          </span>
+        <div className="workbench-commandbar__meta" aria-label="工作台概览">
+          <span>{meetings.filteredMeetings.length} 场会议</span>
+          <span>{derived.todayMeetingCount} 场今日</span>
+          {blockedRunCount > 0 && <span className="workbench-commandbar__alert">{blockedRunCount} 个阻塞</span>}
         </div>
         <button className="primary-button" onClick={modals.openCreate} type="button">
           新建会议
@@ -81,11 +79,11 @@ export function WorkspacePage() {
           ) : (
             <section className="workbench-empty" aria-label="入门指南">
               <div className="workbench-empty__icon" aria-hidden="true" />
-              <h2>选择会议开始编排流程</h2>
+              <h2>选择会议开始</h2>
               <p>
                 {meetings.filteredMeetings.length > 0
-                  ? "从左侧列表选择一场会议，即可查看和编排它的工作流模板、运行记录和待办事项。"
-                  : "还没有会议。点击上方“新建会议”创建第一场会议。"}
+                  ? "选中左侧会议后，右侧会展示流程画布与运行侧栏。"
+                  : "还没有会议，先创建一场会议。"}
               </p>
               {meetings.filteredMeetings.length === 0 && (
                 <button className="primary-button" onClick={modals.openCreate} type="button">

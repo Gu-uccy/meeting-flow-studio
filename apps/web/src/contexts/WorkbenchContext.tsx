@@ -32,6 +32,9 @@ function isToday(value: string) {
 type WorkbenchContextValue = {
   workbenchView: WorkbenchView;
   setWorkbenchView: (view: WorkbenchView) => void;
+  pendingNodeAgentKey: string | null;
+  openNodeAgent: (templateId: string, nodeId: string) => void;
+  clearPendingNodeAgent: () => void;
   meetings: ReturnType<typeof useMeetings>;
   workflow: ReturnType<typeof useWorkflowLibrary> & {
     advanceRunAndReloadMemories: (runId: string, resolutionNote: string) => Promise<ProductWorkflowRun | null>;
@@ -75,6 +78,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const isEnabled = Boolean(user);
 
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("workspace");
+  const [pendingNodeAgentKey, setPendingNodeAgentKey] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
@@ -139,6 +143,15 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const closeDetail = useCallback(() => {
     setIsDetailOpen(false);
     setIsDetailEditing(false);
+  }, []);
+
+  const openNodeAgent = useCallback((templateId: string, nodeId: string) => {
+    setPendingNodeAgentKey(`${templateId}-${nodeId}`);
+    setWorkbenchView("apps");
+  }, []);
+
+  const clearPendingNodeAgent = useCallback(() => {
+    setPendingNodeAgentKey(null);
   }, []);
 
   const submitCreate = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -206,6 +219,9 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     () => ({
       workbenchView,
       setWorkbenchView,
+      pendingNodeAgentKey,
+      openNodeAgent,
+      clearPendingNodeAgent,
       meetings,
       workflow,
       googleCalendar,
@@ -216,7 +232,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       modals,
       derived
     }),
-    [agent, aiSettings, derived, feishuCalendar, googleCalendar, meetings, memories, modals, workflow, workbenchView]
+    [agent, aiSettings, clearPendingNodeAgent, derived, feishuCalendar, googleCalendar, meetings, memories, modals, openNodeAgent, pendingNodeAgentKey, workflow, workbenchView]
   );
 
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;

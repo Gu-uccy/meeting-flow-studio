@@ -2,12 +2,13 @@ import { useWorkbench } from "../../contexts/WorkbenchContext";
 import { useWorkflowCanvasState } from "../../hooks/useWorkflowCanvasState";
 import { RunDetailDialog } from "./RunDetailDialog";
 import { WorkflowCanvasInspector } from "./WorkflowCanvasInspector";
-import { WorkflowCanvasPane } from "./WorkflowCanvasPane";
+import { WorkflowCanvasHeader, WorkflowCanvasPane } from "./WorkflowCanvasPane";
+import { WorkflowMorePanel } from "./WorkflowMorePanel";
 import { WorkflowSupportPanel } from "./WorkflowSupportPanel";
 import { getNextMeetingStatus } from "./workflowPanelUtils";
 
 export function WorkflowTemplatePanel() {
-  const { agent, feishuCalendar, googleCalendar, meetings, memories, modals, workflow } = useWorkbench();
+  const { agent, feishuCalendar, googleCalendar, meetings, memories, modals, openNodeAgent, workflow } = useWorkbench();
 
   const selectedMeeting = meetings.selectedMeeting;
   const isMutating = meetings.isMutating;
@@ -68,7 +69,7 @@ export function WorkflowTemplatePanel() {
       <section className="workflow-shell workflow-shell--console ide-workflow workflow-empty-state">
         <div>
           <span>工作流模板</span>
-          <strong>正在从 API 加载模板和运行记录...</strong>
+          <strong>正在加载模板和运行记录...</strong>
         </div>
       </section>
     );
@@ -89,9 +90,25 @@ export function WorkflowTemplatePanel() {
     <>
       <section
         className={`workflow-shell workflow-shell--console ide-workflow${
-          canvas.isCanvasEditMode ? " is-editing" : canvas.isWorkflowDetailOpen ? " is-detail" : " is-simple"
+          canvas.isCanvasEditMode
+            ? " is-editing"
+            : canvas.isWorkflowDetailOpen
+              ? " is-detail"
+              : canvas.isWorkflowMoreOpen
+                ? " is-more"
+                : " is-simple"
         }`}
       >
+        <WorkflowCanvasHeader
+          isCanvasDirty={canvas.isCanvasDirty}
+          isCanvasEditMode={canvas.isCanvasEditMode}
+          isWorkflowDetailOpen={canvas.isWorkflowDetailOpen}
+          isWorkflowMoreOpen={canvas.isWorkflowMoreOpen}
+          onSetCanvasEditMode={canvas.setIsCanvasEditMode}
+          onSetWorkflowDetailOpen={canvas.setIsWorkflowDetailOpen}
+          onSetWorkflowMoreOpen={canvas.setIsWorkflowMoreOpen}
+        />
+
         <WorkflowCanvasPane
           actionCount={actionCount}
           availableRuns={canvas.availableRuns}
@@ -102,8 +119,9 @@ export function WorkflowTemplatePanel() {
           isCanvasEditMode={canvas.isCanvasEditMode}
           isCanvasZoomFocused={canvas.isCanvasZoomFocused}
           isValidConnection={canvas.isValidConnection}
-          isWorkflowActionBusy={isWorkflowActionBusy}
           isWorkflowDetailOpen={canvas.isWorkflowDetailOpen}
+          isWorkflowMoreOpen={canvas.isWorkflowMoreOpen}
+          isWorkflowActionBusy={isWorkflowActionBusy}
           onAddNode={canvas.handleAddNode}
           onAdvanceWorkflowRun={() => void canvas.handleAdvanceWorkflowRun()}
           onConnect={canvas.handleConnect}
@@ -123,6 +141,7 @@ export function WorkflowTemplatePanel() {
           onSetCanvasEditMode={canvas.setIsCanvasEditMode}
           onSetCanvasZoomFocused={canvas.setIsCanvasZoomFocused}
           onSetWorkflowDetailOpen={canvas.setIsWorkflowDetailOpen}
+          onSetWorkflowMoreOpen={canvas.setIsWorkflowMoreOpen}
           onStartWorkflowRun={() => void canvas.handleStartWorkflowRun()}
           selectedFlowNodeId={canvas.selectedFlowNodeId}
           selectedInputPayload={canvas.selectedInputPayload}
@@ -146,67 +165,77 @@ export function WorkflowTemplatePanel() {
             isCanvasDirty={canvas.isCanvasDirty}
             isWorkflowActionBusy={isWorkflowActionBusy}
             onDeleteSelectedEdge={canvas.handleDeleteSelectedEdge}
+            onOpenNodeAgent={openNodeAgent}
             onResetCanvas={canvas.handleResetCanvas}
             onSaveCanvas={() => void canvas.handleSaveCanvas()}
             selectedEdge={canvas.selectedEdge}
             selectedNode={canvas.selectedNode}
+            selectedTemplateId={canvas.selectedTemplateId}
             updateCanvasEdge={canvas.updateCanvasEdge}
             updateCanvasNode={canvas.updateCanvasNode}
           />
         )}
 
-        <WorkflowSupportPanel
-          agentError={agentError}
-          agentRun={agentRun}
-          blockedNodeRun={canvas.blockedNodeRun}
-          calendarStatusMessage={calendarStatusMessage}
-          canSyncFeishuCalendar={canSyncFeishuCalendar}
-          canSyncGoogleCalendar={canSyncGoogleCalendar}
-          feishuCalendarStatusMessage={feishuCalendarStatusMessage}
-          feishuRedirectUri={feishuRedirectUri}
-          googleRedirectUri={googleRedirectUri}
-          isAgentRunning={isAgentRunning}
-          isCalendarLoading={isCalendarLoading}
-          isFeishuCalendarConfigured={isFeishuCalendarConfigured}
-          isFeishuCalendarConnected={isFeishuCalendarConnected}
-          isFeishuCalendarLoading={isFeishuCalendarLoading}
-          isGoogleCalendarConfigured={isGoogleCalendarConfigured}
-          isGoogleCalendarConnected={isGoogleCalendarConnected}
-          isMemoryLoading={isMemoryLoading}
-          isMemoryMutating={isMemoryMutating}
-          isWorkflowActionBusy={isWorkflowActionBusy}
-          isWorkflowDetailOpen={canvas.isWorkflowDetailOpen}
-          meetingMemories={meetingMemories}
-          memoryError={memoryError}
-          nextMeetingStatus={nextMeetingStatus}
-          onAdvanceWorkflowRun={() => void canvas.handleAdvanceWorkflowRun()}
-          onCancelWorkflowRun={() => void canvas.handleCancelWorkflowRun()}
-          onConnectFeishuCalendar={() => void feishuCalendar.connectFeishuCalendar()}
-          onConnectGoogleCalendar={() => void googleCalendar.connectGoogleCalendar()}
-          onDeleteMemory={memories.deleteMemory}
-          onEditMeeting={onEditMeeting}
-          onOpenDetail={onOpenDetail}
-          onOpenRunDetail={() => canvas.setIsRunDetailOpen(true)}
-          onRetryWorkflowRun={() => void canvas.handleRetryWorkflowRun()}
-          onRunAgent={() => void agent.runAgentAndReload()}
-          onStartWorkflowRun={() => void canvas.handleStartWorkflowRun()}
-          onSyncFeishuCalendar={() => void onSyncFeishuCalendar()}
-          onSyncGoogleCalendar={() => void onSyncGoogleCalendar()}
-          onUpdateMemory={memories.updateMemory}
-          onUpdateStatus={meetings.updateMeetingStatus}
-          resolutionNote={canvas.resolutionNote}
-          selectedFlowNodeId={canvas.selectedFlowNodeId}
-          selectedInputPayload={canvas.selectedInputPayload}
-          selectedMeeting={selectedMeeting}
-          selectedNode={canvas.selectedNode}
-          selectedNodeRun={canvas.selectedNodeRun}
-          selectedOutputPayload={canvas.selectedOutputPayload}
-          selectedRun={canvas.selectedRun}
-          selectedTemplate={canvas.selectedTemplate}
-          setResolutionNote={canvas.setResolutionNote}
-          setSelectedFlowNodeId={canvas.setSelectedFlowNodeId}
-          workflowFeedback={workflowFeedback}
-        />
+        {canvas.isWorkflowDetailOpen && !canvas.isCanvasEditMode && (
+          <WorkflowSupportPanel
+            blockedNodeRun={canvas.blockedNodeRun}
+            isMemoryLoading={isMemoryLoading}
+            isMemoryMutating={isMemoryMutating}
+            isWorkflowActionBusy={isWorkflowActionBusy}
+            meetingMemories={meetingMemories}
+            memoryError={memoryError}
+            nextMeetingStatus={nextMeetingStatus}
+            onAdvanceWorkflowRun={() => void canvas.handleAdvanceWorkflowRun()}
+            onCancelWorkflowRun={() => void canvas.handleCancelWorkflowRun()}
+            onDeleteMemory={memories.deleteMemory}
+            onEditMeeting={onEditMeeting}
+            onOpenDetail={onOpenDetail}
+            onOpenRunDetail={() => canvas.setIsRunDetailOpen(true)}
+            onRetryWorkflowRun={() => void canvas.handleRetryWorkflowRun()}
+            onStartWorkflowRun={() => void canvas.handleStartWorkflowRun()}
+            onUpdateMemory={memories.updateMemory}
+            onUpdateStatus={meetings.updateMeetingStatus}
+            resolutionNote={canvas.resolutionNote}
+            selectedFlowNodeId={canvas.selectedFlowNodeId}
+            selectedInputPayload={canvas.selectedInputPayload}
+            selectedMeeting={selectedMeeting}
+            selectedNode={canvas.selectedNode}
+            selectedNodeRun={canvas.selectedNodeRun}
+            selectedOutputPayload={canvas.selectedOutputPayload}
+            selectedRun={canvas.selectedRun}
+            selectedTemplate={canvas.selectedTemplate}
+            setResolutionNote={canvas.setResolutionNote}
+            setSelectedFlowNodeId={canvas.setSelectedFlowNodeId}
+            workflowFeedback={workflowFeedback}
+          />
+        )}
+
+        {canvas.isWorkflowMoreOpen && !canvas.isCanvasEditMode && (
+          <WorkflowMorePanel
+            agentError={agentError}
+            agentRun={agentRun}
+            calendarStatusMessage={calendarStatusMessage}
+            canSyncFeishuCalendar={canSyncFeishuCalendar}
+            canSyncGoogleCalendar={canSyncGoogleCalendar}
+            feishuCalendarStatusMessage={feishuCalendarStatusMessage}
+            feishuRedirectUri={feishuRedirectUri}
+            googleRedirectUri={googleRedirectUri}
+            isAgentRunning={isAgentRunning}
+            isCalendarLoading={isCalendarLoading}
+            isFeishuCalendarConfigured={isFeishuCalendarConfigured}
+            isFeishuCalendarConnected={isFeishuCalendarConnected}
+            isFeishuCalendarLoading={isFeishuCalendarLoading}
+            isGoogleCalendarConfigured={isGoogleCalendarConfigured}
+            isGoogleCalendarConnected={isGoogleCalendarConnected}
+            isWorkflowActionBusy={isWorkflowActionBusy}
+            onConnectFeishuCalendar={() => void feishuCalendar.connectFeishuCalendar()}
+            onConnectGoogleCalendar={() => void googleCalendar.connectGoogleCalendar()}
+            onRunAgent={() => void agent.runAgentAndReload()}
+            onSyncFeishuCalendar={() => void onSyncFeishuCalendar()}
+            onSyncGoogleCalendar={() => void onSyncGoogleCalendar()}
+            selectedMeeting={selectedMeeting}
+          />
+        )}
       </section>
 
       {canvas.isRunDetailOpen && canvas.selectedRun && (

@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   meetingNodeKindLabels,
   type AiApplicationInputField,
   type AiApplicationOutputField,
   type AiApplicationPromptConfig,
   type MeetingRecordWithPermissions,
-  type ProductNodeRun,
   type ProductWorkflowNodeExecutor,
   type ProductWorkflowRun,
 } from "@meeting-flow/shared";
 import { Dropdown } from "../common/Dropdown";
 import { formatDateTime } from "../../lib/format";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
+import { NodeAgentDebugStudio } from "./NodeAgentDebugStudio";
+import { NodeAgentVersionDiffPanel } from "./NodeAgentVersionDiffPanel";
 
 // ── Types ──
 
@@ -46,22 +47,6 @@ function mappingRowsToObject(rows: MappingRow[]) {
   return Object.fromEntries(rows.map((r) => [r.source.trim(), r.target.trim()] as const).filter(([s]) => Boolean(s)));
 }
 
-function stringifyTracePayload(payload?: ProductNodeRun["inputPayload"] | ProductNodeRun["outputPayload"]) {
-  if (!payload || Object.keys(payload).length === 0) return "{}";
-  return JSON.stringify(payload, null, 2);
-}
-
-function formatNodeRunDuration(nodeRun: ProductNodeRun) {
-  if (!nodeRun.startedAt || !nodeRun.endedAt) return "未结束";
-  const durationMs = new Date(nodeRun.endedAt).getTime() - new Date(nodeRun.startedAt).getTime();
-  return `${Math.max(0, Math.round(durationMs / 1000))}s`;
-}
-
-function formatNodeRunWindow(nodeRun: ProductNodeRun) {
-  if (!nodeRun.startedAt) return "尚未开始";
-  return nodeRun.endedAt ? `${formatDateTime(nodeRun.startedAt)} - ${formatDateTime(nodeRun.endedAt)}` : formatDateTime(nodeRun.startedAt);
-}
-
 function getDefaultAppInputValue(field: AiApplicationInputField, meeting?: MeetingRecordWithPermissions | null) {
   if (!meeting) return field.defaultValue;
   if (field.key === "meetingId") return meeting.id;
@@ -80,19 +65,22 @@ function groupMappingVariableOptions(options: MappingVariableOption[]) {
   }, []);
 }
 
+type NodeAgentStudioTab = "configure" | "debug" | "versions";
+
 // ── Component ──
 
 export function NodeAgentPage() {
   const {
+    clearPendingNodeAgent,
     derived,
     meetings,
     memories,
+    pendingNodeAgentKey,
     setWorkbenchView,
     workflow
   } = useWorkbench();
 
   const aiApplications = workflow.applications;
-  const filteredMeetings = meetings.filteredMeetings;
   const isWorkflowMutating = workflow.isMutating;
   const modelRuntimeLabel = derived.modelRuntimeLabel;
   const nodeCapabilities = workflow.nodeCapabilities;
@@ -112,6 +100,8 @@ export function NodeAgentPage() {
   const [nodeAgentSearchQuery, setNodeAgentSearchQuery] = useState("");
   const [nodeAgentRuntimeFilter, setNodeAgentRuntimeFilter] = useState<"all" | "ai" | "system">("all");
   const [selectedNodeAgentKey, setSelectedNodeAgentKey] = useState("");
+  const [activeStudioTab, setActiveStudioTab] = useState<NodeAgentStudioTab>("configure");
+  const [isPromptRunning, setIsPromptRunning] = useState(false);
   const [nodeAgentMappingDrafts, setNodeAgentMappingDrafts] = useState<Record<string, NodeAgentMappingDraft>>({});
   const [nodeAgentSchemaDrafts, setNodeAgentSchemaDrafts] = useState<Record<string, NodeAgentSchemaDraft>>({});
   const [nodeAgentPromptDrafts, setNodeAgentPromptDrafts] = useState<Record<string, NodeAgentPromptDraft>>({});
@@ -135,14 +125,20 @@ export function NodeAgentPage() {
   });
 
   const selectedBinding = filteredNodeAgentBindings.find(({ node, template }) => `${template.id}-${node.id}` === selectedNodeAgentKey) ?? filteredNodeAgentBindings[0] ?? nodeAgentBindings[0] ?? null;
+
+  useEffect(() => {
+    if (!pendingNodeAgentKey) {
+      return;
+    }
+
+    setSelectedNodeAgentKey(pendingNodeAgentKey);
+    setActiveStudioTab("debug");
+    clearPendingNodeAgent();
+  }, [clearPendingNodeAgent, pendingNodeAgentKey]);
   const selectedApp = selectedBinding?.application ?? null;
   const selectedNode = selectedBinding?.node ?? null;
   const selectedTemplate = selectedBinding?.template ?? null;
   const selectedExecutor = selectedNode?.executor ?? null;
-
-  const activeDebugApp = debugSession ? aiApplications.find((a) => a.id === debugSession.applicationId) : null;
-  const activeDebugTemplate = activeDebugApp ? workflowTemplates.find((t) => t.id === activeDebugApp.templateId) : null;
-  const activeDebugMeeting = debugSession ? filteredMeetings.find((m) => m.id === debugSession.run.meetingId) : null;
 
   function getBindingKey() { return selectedBinding ? `${selectedBinding.template.id}-${selectedBinding.node.id}` : ""; }
   function getAppInputValue(appId: string, field: AiApplicationInputField) { return appInputDrafts[appId]?.[field.key] ?? getDefaultAppInputValue(field, selectedMeeting); }
@@ -224,6 +220,75 @@ export function NodeAgentPage() {
 
   const inputMappings = Object.entries(selectedBinding?.node.executor?.inputMapping ?? {});
   const outputMappings = Object.entries(selectedBinding?.node.executor?.outputMapping ?? {});
+  const playgroundNodeRun = debugSession?.run.nodeRuns.find((nodeRun) => nodeRun.nodeId === selectedNode?.id);
+  const promptVariableGroups = groupMappingVariableOptions([
+    ...meetingMappingVariableOptions,
+    ...getEditableInputSchema(selectedApp?.id ?? "").map((field) => ({
+      group: "Input Schema",
+      label: field.label || field.key,
+      value: `input.${field.key}`
+    })),
+    ...(selectedNode
+      ? [
+          { group: "当前节点", label: "节点 ID", value: "node.id" },
+          { group: "当前节点", label: "节点名称", value: "node.title" },
+          { group: "当前节点", label: "节点类型", value: "node.kind" }
+        ]
+      : [])
+  ]);
+
+  async function runPromptPlayground() {
+    if (!selectedApp || !selectedMeeting) {
+      return;
+    }
+
+    setIsPromptRunning(true);
+    try {
+      const result = await onDebugApplication(
+        selectedApp.id,
+        Object.fromEntries(getEditableInputSchema(selectedApp.id).map((field) => [field.key, getAppInputValue(selectedApp.id, field)]))
+      );
+      if (result) {
+        setDebugSession({ applicationId: selectedApp.id, inputs: result.inputs, run: result.run });
+        void onReloadMemories();
+      }
+    } finally {
+      setIsPromptRunning(false);
+    }
+  }
+
+  async function runWorkflowDebug() {
+    if (!selectedTemplate || !selectedMeeting || !selectedApp) {
+      return;
+    }
+
+    const run = await onStartWorkflowRun(selectedMeeting.id, selectedTemplate.id);
+    if (run) {
+      setDebugSession({
+        applicationId: selectedApp.id,
+        inputs: { meetingId: selectedMeeting.id, templateId: selectedTemplate.id },
+        run
+      });
+      void onReloadMemories();
+    }
+  }
+
+  function appendPromptVariable(target: "systemPrompt" | "userPrompt", variable: string) {
+    if (!selectedApp) {
+      return;
+    }
+
+    const config = getEditablePromptConfig(selectedApp.id);
+    if (!config) {
+      return;
+    }
+
+    setPromptConfigField(
+      selectedApp.id,
+      target,
+      `${config[target]}${config[target].trim() ? "\n" : ""}{{${variable}}}`
+    );
+  }
 
   return (
     <>
@@ -232,9 +297,31 @@ export function NodeAgentPage() {
           <div>
             <span className="section-kicker">Mini Dify Layer</span>
             <h2>节点智能体管理</h2>
-            <p>把会议流程节点绑定为可复用、可调试、可通过 API 运行的智能体执行器。</p>
+            <p>参考 Dify 的 LLM / Knowledge / Tool 节点模型，为流程节点配置 Prompt、Schema、映射、版本与调试。</p>
           </div>
-          <button className="ghost-button" onClick={onNavigateToAccount} type="button">配置模型</button>
+          <div className="app-hub__header-actions">
+            <button className="ghost-button" onClick={() => setWorkbenchView("workspace")} type="button">返回流程画布</button>
+            <button className="ghost-button" onClick={onNavigateToAccount} type="button">配置模型</button>
+          </div>
+        </div>
+
+        <div className="node-agent-studio-tabs" aria-label="智能体工作室视图" role="tablist">
+          {([
+            ["configure", "编排配置"],
+            ["debug", "调试 Playground"],
+            ["versions", "版本"]
+          ] as const).map(([id, label]) => (
+            <button
+              aria-selected={activeStudioTab === id}
+              className={`node-agent-studio-tabs__button${activeStudioTab === id ? " is-active" : ""}`}
+              key={id}
+              onClick={() => setActiveStudioTab(id)}
+              role="tab"
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="app-hub__summary" aria-label="节点智能体概览">
@@ -291,7 +378,7 @@ export function NodeAgentPage() {
                   <article><span>入口</span><code>{selectedApp?.entrypoint ?? selectedExecutor?.runtime ?? "manual"}</code></article>
                 </div>
 
-                {selectedExecutor && (
+                {activeStudioTab === "configure" && selectedExecutor && (
                   <div className="node-agent-editor" aria-label="节点智能体编辑器">
                     <label>
                       <span>执行方式</span>
@@ -337,29 +424,15 @@ export function NodeAgentPage() {
                   </div>
                 )}
 
-                <div className="node-agent-card__maps">
-                  <div><span>Input Mapping</span>{inputMappings.length > 0 ? inputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no inputs</code>}</div>
-                  <div><span>Output Mapping</span>{outputMappings.length > 0 ? outputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no outputs</code>}</div>
-                </div>
+                {activeStudioTab === "configure" && (
+                  <div className="node-agent-card__maps">
+                    <div><span>Input Mapping</span>{inputMappings.length > 0 ? inputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no inputs</code>}</div>
+                    <div><span>Output Mapping</span>{outputMappings.length > 0 ? outputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no outputs</code>}</div>
+                  </div>
+                )}
 
-                {selectedApp && (
+                {selectedApp && activeStudioTab === "configure" && (
                   <>
-                    {/* Input preview */}
-                    <div className="app-input-schema" aria-label="节点智能体输入变量">
-                      {getEditableInputSchema(selectedApp.id).slice(0, 4).map((field) => (
-                        <label className="app-input-field" key={field.key}>
-                          <span>{field.label}{field.required ? " *" : ""}</span>
-                          {field.type === "textarea" || field.type === "json" ? (
-                            <textarea onChange={(e) => setAppInputDrafts((c) => ({ ...c, [selectedApp.id]: { ...c[selectedApp.id], [field.key]: e.target.value } }))} value={getAppInputValue(selectedApp.id, field)} />
-                          ) : (
-                            <input onChange={(e) => setAppInputDrafts((c) => ({ ...c, [selectedApp.id]: { ...c[selectedApp.id], [field.key]: e.target.value } }))} type={field.type === "number" ? "number" : "text"} value={getAppInputValue(selectedApp.id, field)} />
-                          )}
-                          <small>{field.description}</small>
-                        </label>
-                      ))}
-                    </div>
-
-                    {/* Schema editor */}
                     <div className="node-agent-schema-editor" aria-label="节点智能体 Schema 编辑器">
                       <div className="node-agent-editor__section-title">
                         <span>Input Schema</span>
@@ -400,47 +473,48 @@ export function NodeAgentPage() {
                       })}
                       <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void saveSelectedNodeSchema()} type="button">保存 Schema</button>
                     </div>
+                  </>
+                )}
 
-                    {/* Prompt editor */}
-                    {(() => {
-                      const config = getEditablePromptConfig(selectedApp.id);
-                      if (!config) return null;
-                      return (
-                        <div className="node-agent-prompt-editor" aria-label="节点智能体 Prompt 配置">
-                          <div className="node-agent-editor__section-title">
-                            <span>Prompt</span>
-                            <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void saveSelectedNodePromptConfig()} type="button">保存 Prompt</button>
-                          </div>
-                          <label><span>System Prompt</span><textarea onChange={(e) => setPromptConfigField(selectedApp.id, "systemPrompt", e.target.value)} value={config.systemPrompt} /></label>
-                          <label><span>User Prompt</span><textarea onChange={(e) => setPromptConfigField(selectedApp.id, "userPrompt", e.target.value)} value={config.userPrompt} /></label>
-                          <div className="node-agent-prompt-grid">
-                            <label><span>模型</span><input onChange={(e) => setPromptConfigField(selectedApp.id, "model", e.target.value)} value={config.model} /></label>
-                            <label><span>Temperature</span><input max={1} min={0} onChange={(e) => setPromptConfigField(selectedApp.id, "temperature", Number(e.target.value))} step={0.1} type="number" value={config.temperature} /></label>
-                            <label><span>Max Tokens</span><input max={8000} min={128} onChange={(e) => setPromptConfigField(selectedApp.id, "maxTokens", Number(e.target.value))} step={128} type="number" value={config.maxTokens} /></label>
-                          </div>
-                          <div className="node-agent-prompt-variables" aria-label="运行时变量">
-                            <div className="node-agent-editor__section-title"><span>运行时变量</span></div>
-                            {groupMappingVariableOptions([...meetingMappingVariableOptions, ...getEditableInputSchema(selectedApp.id).map((f) => ({ group: "Input Schema", label: f.label || f.key, value: `input.${f.key}` })), ...(selectedNode ? [{ group: "当前节点", label: "节点 ID", value: "node.id" }, { group: "当前节点", label: "节点名称", value: "node.title" }, { group: "当前节点", label: "节点类型", value: "node.kind" }] : [])]).map((g) => (
-                              <section className="node-agent-prompt-variable-group" key={g.group}>
-                                <strong>{g.group}</strong>
-                                <div className="node-agent-prompt-variable-list">
-                                  {g.options.map((o) => (
-                                    <div className="node-agent-prompt-variable-chip" key={`${g.group}-${o.value}`}>
-                                      <code>{`{{${o.value}}}`}</code><span>{o.label}</span>
-                                      <button className="ghost-button" onClick={() => { const c = getEditablePromptConfig(selectedApp.id); if (c) setPromptConfigField(selectedApp.id, "userPrompt", `${c.userPrompt}${c.userPrompt.trim() ? "\n" : ""}{{${o.value}}}`); }} type="button">User</button>
-                                      <button className="ghost-button" onClick={() => { const c = getEditablePromptConfig(selectedApp.id); if (c) setPromptConfigField(selectedApp.id, "systemPrompt", `${c.systemPrompt}${c.systemPrompt.trim() ? "\n" : ""}{{${o.value}}}`); }} type="button">System</button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </section>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                {selectedApp && selectedNode && activeStudioTab === "debug" && (() => {
+                  const config = getEditablePromptConfig(selectedApp.id);
+                  if (!config) {
+                    return null;
+                  }
 
-                    {/* Version panel */}
-                    <div className="node-agent-version-panel" aria-label="节点智能体版本记录">
+                  return (
+                    <NodeAgentDebugStudio
+                      app={selectedApp}
+                      appId={selectedApp.id}
+                      debugSession={debugSession}
+                      getAppInputValue={(field) => getAppInputValue(selectedApp.id, field)}
+                      inputSchema={getEditableInputSchema(selectedApp.id)}
+                      isRunning={isPromptRunning}
+                      isWorkflowMutating={isWorkflowMutating}
+                      lastNodeRun={playgroundNodeRun}
+                      meeting={selectedMeeting}
+                      node={selectedNode}
+                      onAppendVariable={appendPromptVariable}
+                      onDebugWorkflow={() => void runWorkflowDebug()}
+                      onInputChange={(fieldKey, value) =>
+                        setAppInputDrafts((current) => ({
+                          ...current,
+                          [selectedApp.id]: { ...current[selectedApp.id], [fieldKey]: value }
+                        }))
+                      }
+                      onPromptChange={(key, value) => setPromptConfigField(selectedApp.id, key, value)}
+                      onRunPrompt={() => void runPromptPlayground()}
+                      onSavePrompt={() => void saveSelectedNodePromptConfig()}
+                      onTogglePublish={() => void onUpdateApplicationStatus(selectedApp.id, selectedApp.status === "published" ? "draft" : "published")}
+                      promptConfig={config}
+                      template={selectedTemplate}
+                      variableGroups={promptVariableGroups}
+                    />
+                  );
+                })()}
+
+                {selectedApp && activeStudioTab === "versions" && (
+                  <div className="node-agent-version-panel" aria-label="节点智能体版本记录">
                       <div className="node-agent-editor__section-title">
                         <span>版本记录</span>
                         <div className="node-agent-editor__section-actions">
@@ -464,25 +538,15 @@ export function NodeAgentPage() {
                         ))}
                         {selectedApp.versions.length === 0 && <div className="node-agent-inline-empty">暂无版本记录，可先保存快照或发布一个版本。</div>}
                       </div>
-                    </div>
-                  </>
-                )}
 
-                <div className="app-card__actions">
-                  <button className="ghost-button" disabled={!selectedApp || !selectedMeeting || isWorkflowMutating} onClick={async () => {
-                    if (!selectedApp || !selectedMeeting) return;
-                    const result = await onDebugApplication(selectedApp.id, Object.fromEntries(getEditableInputSchema(selectedApp.id).map((f) => [f.key, getAppInputValue(selectedApp.id, f)])));
-                    if (result) { setDebugSession({ applicationId: selectedApp.id, inputs: result.inputs, run: result.run }); void onReloadMemories(); }
-                  }} type="button">调试节点</button>
-                  <button className="ghost-button" disabled={!selectedTemplate || !selectedMeeting || isWorkflowMutating} onClick={async () => {
-                    if (!selectedTemplate || !selectedMeeting) return;
-                    const run = await onStartWorkflowRun(selectedMeeting.id, selectedTemplate.id);
-                    if (run) { setDebugSession({ applicationId: selectedApp?.id ?? selectedTemplate.id, inputs: { meetingId: selectedMeeting.id, templateId: selectedTemplate.id }, run }); void onReloadMemories(); }
-                  }} type="button">调试工作流</button>
-                  <button className="ghost-button" disabled={!selectedApp || isWorkflowMutating} onClick={() => selectedApp ? void onUpdateApplicationStatus(selectedApp.id, selectedApp.status === "published" ? "draft" : "published") : undefined} type="button">
-                    {selectedApp?.status === "published" ? "下线" : "发布"}
-                  </button>
-                </div>
+                      <NodeAgentVersionDiffPanel
+                        currentVersionLabel={selectedApp.versions[0]?.version ?? "当前草稿"}
+                        isWorkflowMutating={isWorkflowMutating}
+                        onApplyVersion={(versionId) => void onApplyApplicationVersion(selectedApp.id, versionId)}
+                        versions={selectedApp.versions}
+                      />
+                    </div>
+                )}
               </>
             ) : (
               <div className="node-agent-empty">请选择一个流程节点</div>
@@ -499,64 +563,6 @@ export function NodeAgentPage() {
           ))}
         </div>
       </section>
-
-      {/* Debug console */}
-      {debugSession && activeDebugApp && (
-        <section className="app-debug-console" aria-label="应用调试台">
-          <div className="app-debug-console__header">
-            <div>
-              <span className="section-kicker">Debug Console</span>
-              <h3>{activeDebugApp.name}</h3>
-              <p>{activeDebugMeeting?.title ?? debugSession.run.name} / {debugSession.run.status} / {debugSession.run.durationSeconds}s</p>
-            </div>
-            <span className={`run-status status-${debugSession.run.status}`}>{debugSession.run.status}</span>
-          </div>
-          <div className="app-debug-console__grid">
-            <article className="app-debug-panel">
-              <div className="app-debug-panel__title"><span>Input</span><strong>{activeDebugApp.entrypoint}</strong></div>
-              <pre>{JSON.stringify(debugSession.inputs, null, 2)}</pre>
-            </article>
-            <article className="app-debug-panel">
-              <div className="app-debug-panel__title"><span>API</span><strong>{activeDebugApp.apiEndpoint}</strong></div>
-              <pre>{`curl -X POST http://127.0.0.1:8787/api/apps/${activeDebugApp.id}/debug \\\n  -H "Authorization: Bearer <token>" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify({ inputs: debugSession.inputs })}'`}</pre>
-            </article>
-          </div>
-          <div className="app-debug-console__grid app-debug-console__grid--wide">
-            <article className="app-debug-panel">
-              <div className="app-debug-panel__title"><span>Node Trace</span><strong>{activeDebugTemplate?.nodes.length ?? debugSession.run.nodeRuns.length} nodes</strong></div>
-              <div className="debug-node-list">
-                {debugSession.run.nodeRuns.map((nodeRun) => {
-                  const node = activeDebugTemplate?.nodes.find((n) => n.id === nodeRun.nodeId);
-                  const nodeLogs = debugSession.run.logs.filter((l) => l.nodeId === nodeRun.nodeId);
-                  return (
-                    <article className="debug-node-row" key={nodeRun.nodeId}>
-                      <div className="debug-node-row__header">
-                        <div><span className={`node-state-badge node-state-badge--${nodeRun.status}`}>{nodeRun.status}</span><strong>{node?.title ?? nodeRun.nodeId}</strong></div>
-                        <small>{formatNodeRunDuration(nodeRun)}</small>
-                      </div>
-                      <div className="debug-node-row__meta"><code>{nodeRun.nodeId}</code><span>{formatNodeRunWindow(nodeRun)}</span></div>
-                      {nodeRun.errorMessage && <div className="debug-node-row__error"><span>Error</span><code>{nodeRun.errorMessage}</code></div>}
-                      <div className="debug-trace-payloads">
-                        <div><span>Input</span><pre>{stringifyTracePayload(nodeRun.inputPayload)}</pre></div>
-                        <div><span>Output</span><pre>{stringifyTracePayload(nodeRun.outputPayload)}</pre></div>
-                      </div>
-                      {nodeLogs.length > 0 && <div className="debug-node-row__logs">{nodeLogs.map((l) => <code className={`debug-node-row__log debug-node-row__log--${l.level}`} key={l.id}>{l.time} / {l.message}</code>)}</div>}
-                    </article>
-                  );
-                })}
-              </div>
-            </article>
-            <article className="app-debug-panel">
-              <div className="app-debug-panel__title"><span>Trace</span><strong>{debugSession.run.logs.length} logs</strong></div>
-              <div className="debug-log-list">
-                {debugSession.run.logs.map((l) => (
-                  <div className={`debug-log-row debug-log-row--${l.level}`} key={l.id}><span>{l.time}</span><code>{l.nodeId ? `${l.nodeId}: ${l.message}` : l.message}</code></div>
-                ))}
-              </div>
-            </article>
-          </div>
-        </section>
-      )}
     </>
   );
 }

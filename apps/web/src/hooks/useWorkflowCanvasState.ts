@@ -65,6 +65,7 @@ export function useWorkflowCanvasState({
   const [isCanvasZoomFocused, setIsCanvasZoomFocused] = useState(false);
   const [isCanvasEditMode, setIsCanvasEditMode] = useState(false);
   const [isWorkflowDetailOpen, setIsWorkflowDetailOpen] = useState(false);
+  const [isWorkflowMoreOpen, setIsWorkflowMoreOpen] = useState(false);
 
   const lastAutoMatchedMeetingId = useRef<string | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -395,6 +396,7 @@ export function useWorkflowCanvasState({
     isRunDetailOpen,
     isValidConnection,
     isWorkflowDetailOpen,
+    isWorkflowMoreOpen,
     reactFlowInstance,
     reactFlowWrapper,
     resolutionNote,
@@ -414,6 +416,7 @@ export function useWorkflowCanvasState({
     setIsCanvasZoomFocused,
     setIsRunDetailOpen,
     setIsWorkflowDetailOpen,
+    setIsWorkflowMoreOpen,
     setResolutionNote,
     setSelectedFlowNodeId,
     updateCanvasEdge,
