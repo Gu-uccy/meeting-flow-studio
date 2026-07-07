@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../lib/apiClient";
 
+export type WorkflowScheduleExecution = {
+  runId: string;
+  status: string;
+  triggeredAt: string;
+};
+
 export type WorkflowSchedule = {
   cronExpression: string;
   enabled: boolean;
+  executionHistory?: WorkflowScheduleExecution[];
   id: string;
+  lastRunId?: string;
   lastTriggeredAt?: string;
+  meetingId?: string;
   templateId: string;
 };
 
@@ -57,7 +66,7 @@ export function useWorkflowSchedules(isEnabled = true) {
     void loadSchedules();
   }, [loadSchedules]);
 
-  async function createSchedule(templateId: string, cronExpression: string) {
+  async function createSchedule(templateId: string, cronExpression: string, meetingId?: string) {
     setIsMutating(true);
     setError("");
     setFeedback("");
@@ -66,7 +75,7 @@ export function useWorkflowSchedules(isEnabled = true) {
       const response = await apiClient("/api/workflows/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateId, cronExpression })
+        body: JSON.stringify({ templateId, cronExpression, meetingId })
       });
       const data = (await response.json()) as Partial<WorkflowScheduleMutationResponse> & { message?: string };
 
@@ -79,6 +88,37 @@ export function useWorkflowSchedules(isEnabled = true) {
       return data.schedule;
     } catch (requestError) {
       setError(parseErrorMessage("创建定时任务失败，请稍后重试。", requestError));
+      return null;
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function updateSchedule(
+    id: string,
+    patch: Partial<Pick<WorkflowSchedule, "enabled" | "meetingId" | "cronExpression">>
+  ) {
+    setIsMutating(true);
+    setError("");
+    setFeedback("");
+
+    try {
+      const response = await apiClient(`/api/workflows/schedules/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+      });
+      const data = (await response.json()) as Partial<WorkflowScheduleMutationResponse> & { message?: string };
+
+      if (!response.ok || !data.schedule) {
+        throw new Error(data.message ?? "更新定时任务失败，请稍后重试。");
+      }
+
+      setItems((current) => current.map((item) => (item.id === id ? (data.schedule as WorkflowSchedule) : item)));
+      setFeedback(data.message ?? "计划任务已更新");
+      return data.schedule;
+    } catch (requestError) {
+      setError(parseErrorMessage("更新定时任务失败，请稍后重试。", requestError));
       return null;
     } finally {
       setIsMutating(false);
@@ -117,6 +157,7 @@ export function useWorkflowSchedules(isEnabled = true) {
     isLoading,
     isMutating,
     items,
-    reloadSchedules: loadSchedules
+    reloadSchedules: loadSchedules,
+    updateSchedule
   };
 }

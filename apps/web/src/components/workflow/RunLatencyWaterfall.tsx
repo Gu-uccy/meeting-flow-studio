@@ -11,12 +11,18 @@ type RunLatencyWaterfallProps = {
 export function RunLatencyWaterfall({ run, template, variant = "full" }: RunLatencyWaterfallProps) {
   const model = buildRunLatencyWaterfall(run, template);
   const axisMarks = getRunLatencyAxisMarks(model.totalMs);
-  const visibleSegments = variant === "compact"
-    ? [...model.segments]
-        .filter((segment) => segment.hasTiming)
-        .sort((left, right) => right.durationMs - left.durationMs)
-        .slice(0, 6)
-    : model.segments;
+  const visibleWaves = variant === "compact"
+    ? model.waves
+        .map((wave) => ({
+          ...wave,
+          segments: [...wave.segments]
+            .filter((segment) => segment.hasTiming)
+            .sort((left, right) => right.durationMs - left.durationMs)
+            .slice(0, 3)
+        }))
+        .filter((wave) => wave.segments.length > 0)
+        .slice(0, 4)
+    : model.waves;
 
   if (!model.hasTiming) {
     return (
@@ -42,38 +48,48 @@ export function RunLatencyWaterfall({ run, template, variant = "full" }: RunLate
         ))}
       </div>
 
-      <div className="run-latency-waterfall__rows">
-        {visibleSegments.map((segment) => (
-          <div className="run-latency-waterfall__row" key={segment.nodeId}>
-            <div className="run-latency-waterfall__label">
-              <strong>{segment.label}</strong>
-              <small>{nodeRunLabels[segment.status]}</small>
+      <div className="run-latency-waterfall__waves">
+        {visibleWaves.map((wave) => (
+          <section className="run-latency-waterfall__wave" key={`wave-${wave.wave}`}>
+            <div className="run-latency-waterfall__wave-title">
+              <strong>{wave.label}</strong>
+              {wave.parallelCount > 1 ? <span>同波并行</span> : null}
             </div>
-            <div className="run-latency-waterfall__track">
-              {segment.hasTiming ? (
-                <div
-                  className={`run-latency-waterfall__bar run-latency-waterfall__bar--${segment.status}`}
-                  style={{
-                    left: `${segment.offsetPercent}%`,
-                    width: `${segment.widthPercent}%`
-                  }}
-                  title={`${segment.label} · ${segment.durationLabel}`}
-                >
-                  <span>{segment.durationLabel}</span>
+            <div className={`run-latency-waterfall__rows${wave.parallelCount > 1 ? " run-latency-waterfall__rows--parallel" : ""}`}>
+              {wave.segments.map((segment) => (
+                <div className="run-latency-waterfall__row" key={segment.nodeId}>
+                  <div className="run-latency-waterfall__label">
+                    <strong>{segment.label}</strong>
+                    <small>{nodeRunLabels[segment.status]}</small>
+                  </div>
+                  <div className="run-latency-waterfall__track">
+                    {segment.hasTiming ? (
+                      <div
+                        className={`run-latency-waterfall__bar run-latency-waterfall__bar--${segment.status}`}
+                        style={{
+                          left: `${segment.offsetPercent}%`,
+                          width: `${segment.widthPercent}%`
+                        }}
+                        title={`${segment.label} · ${segment.durationLabel}`}
+                      >
+                        <span>{segment.durationLabel}</span>
+                      </div>
+                    ) : (
+                      <span className="run-latency-waterfall__placeholder">{segment.durationLabel}</span>
+                    )}
+                  </div>
+                  <div className="run-latency-waterfall__meta">
+                    {segment.tokens ? <code>{segment.tokens.total} tok</code> : <code>—</code>}
+                  </div>
                 </div>
-              ) : (
-                <span className="run-latency-waterfall__placeholder">{segment.durationLabel}</span>
-              )}
+              ))}
             </div>
-            <div className="run-latency-waterfall__meta">
-              {segment.tokens ? <code>{segment.tokens.total} tok</code> : <code>—</code>}
-            </div>
-          </div>
+          </section>
         ))}
       </div>
 
-      {variant === "compact" && model.segments.length > visibleSegments.length ? (
-        <p className="run-latency-waterfall__hint">仅展示耗时最长的 {visibleSegments.length} 个节点，完整视图见运行详情。</p>
+      {variant === "compact" && model.waves.length > visibleWaves.length ? (
+        <p className="run-latency-waterfall__hint">仅展示前 {visibleWaves.length} 个 wave，完整视图见运行详情。</p>
       ) : null}
     </div>
   );

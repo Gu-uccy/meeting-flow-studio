@@ -15,6 +15,14 @@ export type RunLatencySegment = {
     total: number;
   };
   widthPercent: number;
+  wave: number;
+};
+
+export type RunLatencyWave = {
+  label: string;
+  parallelCount: number;
+  segments: RunLatencySegment[];
+  wave: number;
 };
 
 export type RunLatencyWaterfallModel = {
@@ -22,6 +30,7 @@ export type RunLatencyWaterfallModel = {
   segments: RunLatencySegment[];
   totalMs: number;
   totalLabel: string;
+  waves: RunLatencyWave[];
 };
 
 function formatDurationLabel(durationMs: number) {
@@ -81,15 +90,80 @@ function resolveRunWindow(run: ProductWorkflowRun) {
   };
 }
 
+export function buildNodeWaveMap(template?: ProductWorkflowTemplate | null) {
+  const waveMap = new Map<string, number>();
+  if (!template) {
+    return waveMap;
+  }
+
+  const inDegree = new Map<string, number>();
+  const adjacency = new Map<string, string[]>();
+
+  for (const node of template.nodes) {
+    inDegree.set(node.id, 0);
+    adjacency.set(node.id, []);
+  }
+
+  for (const edge of template.edges) {
+    adjacency.get(edge.source)?.push(edge.target);
+    inDegree.set(edge.target, (inDegree.get(edge.target) ?? 0) + 1);
+  }
+
+  const queue = template.nodes.filter((node) => (inDegree.get(node.id) ?? 0) === 0).map((node) => node.id);
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    const parents = template.edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source);
+    const wave = parents.length === 0 ? 0 : Math.max(...parents.map((parentId) => waveMap.get(parentId) ?? 0)) + 1;
+    waveMap.set(nodeId, wave);
+
+    for (const targetId of adjacency.get(nodeId) ?? []) {
+      const nextCount = (inDegree.get(targetId) ?? 0) - 1;
+      inDegree.set(targetId, nextCount);
+      if (nextCount === 0) {
+        queue.push(targetId);
+      }
+    }
+  }
+
+  for (const node of template.nodes) {
+    if (!waveMap.has(node.id)) {
+      waveMap.set(node.id, 0);
+    }
+  }
+
+  return waveMap;
+}
+
+function groupSegmentsByWave(segments: RunLatencySegment[]) {
+  const waveMap = new Map<number, RunLatencySegment[]>();
+
+  for (const segment of segments) {
+    const current = waveMap.get(segment.wave) ?? [];
+    current.push(segment);
+    waveMap.set(segment.wave, current);
+  }
+
+  return [...waveMap.entries()]
+    .sort(([leftWave], [rightWave]) => leftWave - rightWave)
+    .map(([wave, waveSegments]) => ({
+      wave,
+      label: waveSegments.length > 1 ? `Wave ${wave + 1} · 并行 ${waveSegments.length}` : `Wave ${wave + 1}`,
+      parallelCount: waveSegments.length,
+      segments: [...waveSegments].sort((left, right) => left.offsetMs - right.offsetMs)
+    }));
+}
+
 export function buildRunLatencyWaterfall(
   run: ProductWorkflowRun,
   template?: ProductWorkflowTemplate | null
 ): RunLatencyWaterfallModel {
   const { runStartMs, totalMs } = resolveRunWindow(run);
+  const nodeWaveMap = buildNodeWaveMap(template);
 
   const segments = run.nodeRuns.map((nodeRun) => {
     const label = getNodeLabel(template, nodeRun.nodeId);
     const tokens = getNodeTokens(nodeRun);
+    const wave = nodeWaveMap.get(nodeRun.nodeId) ?? 0;
 
     if (!nodeRun.startedAt) {
       return {
@@ -102,7 +176,8 @@ export function buildRunLatencyWaterfall(
         offsetPercent: 0,
         widthPercent: 0,
         durationLabel: nodeRun.status === "pending" ? "未执行" : "—",
-        tokens
+        tokens,
+        wave
       };
     }
 
@@ -123,12 +198,17 @@ export function buildRunLatencyWaterfall(
       offsetPercent: Math.min(100, (offsetMs / totalMs) * 100),
       widthPercent: Math.min(100 - (offsetMs / totalMs) * 100, Math.max(0.8, (durationMs / totalMs) * 100)),
       durationLabel: formatDurationLabel(durationMs),
-      tokens
+      tokens,
+      wave
     };
   });
 
   const timedSegments = segments.filter((segment) => segment.hasTiming);
   const sortedSegments = [...segments].sort((left, right) => {
+    if (left.wave !== right.wave) {
+      return left.wave - right.wave;
+    }
+
     if (left.hasTiming !== right.hasTiming) {
       return left.hasTiming ? -1 : 1;
     }
@@ -143,6 +223,7 @@ export function buildRunLatencyWaterfall(
   return {
     hasTiming: timedSegments.length > 0,
     segments: sortedSegments,
+    waves: groupSegmentsByWave(sortedSegments),
     totalMs,
     totalLabel: formatDurationLabel(totalMs)
   };

@@ -66,6 +66,7 @@ describe("buildRunLatencyWaterfall", () => {
     expect(agenda?.tokens?.total).toBe(200);
     expect(dispatch?.hasTiming).toBe(false);
     expect(dispatch?.durationLabel).toBe("未执行");
+    expect(model.waves.length).toBeGreaterThan(0);
   });
 
   it("returns empty timing state when node timestamps are missing", () => {

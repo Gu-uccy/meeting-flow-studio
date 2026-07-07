@@ -212,6 +212,7 @@ export function WorkflowTemplatePanel() {
 
         {canvas.isWorkflowMoreOpen && !canvas.isCanvasEditMode && (
           <WorkflowMorePanel
+            agentActionFeedback={agent.actionFeedback}
             agentError={agentError}
             agentRun={agentRun}
             calendarStatusMessage={calendarStatusMessage}
@@ -230,6 +231,7 @@ export function WorkflowTemplatePanel() {
             isWorkflowActionBusy={isWorkflowActionBusy}
             onConnectFeishuCalendar={() => void feishuCalendar.connectFeishuCalendar()}
             onConnectGoogleCalendar={() => void googleCalendar.connectGoogleCalendar()}
+            onExecuteAgentAction={(action) => void agent.executeAgentAction(action)}
             onRunAgent={() => void agent.runAgentAndReload()}
             onSyncFeishuCalendar={() => void onSyncFeishuCalendar()}
             onSyncGoogleCalendar={() => void onSyncGoogleCalendar()}

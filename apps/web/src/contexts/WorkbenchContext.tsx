@@ -15,7 +15,7 @@ import { useAiSettings } from "../hooks/useAiSettings";
 import { useMeetingAgent } from "../hooks/useMeetingAgent";
 import { useMeetingMemories } from "../hooks/useMeetingMemories";
 import { useWorkflowLibrary } from "../hooks/useWorkflowLibrary";
-import type { MeetingAgentRun, ProductWorkflowRun } from "@meeting-flow/shared";
+import type { MeetingAgentRun, MeetingAgentAction, ProductWorkflowRun } from "@meeting-flow/shared";
 
 export type WorkbenchView = "workspace" | "apps" | "account";
 
@@ -46,6 +46,8 @@ type WorkbenchContextValue = {
   aiSettings: ReturnType<typeof useAiSettings>;
   memories: ReturnType<typeof useMeetingMemories>;
   agent: ReturnType<typeof useMeetingAgent> & {
+    actionFeedback: string;
+    executeAgentAction: (action: MeetingAgentAction) => Promise<boolean>;
     runAgentAndReload: () => Promise<MeetingAgentRun | null>;
   };
   modals: {
@@ -90,6 +92,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const workflowBase = useWorkflowLibrary(isEnabled);
   const memories = useMeetingMemories(isEnabled, meetings.selectedMeeting?.id ?? "");
   const agentBase = useMeetingAgent(isEnabled, meetings.selectedMeeting?.id ?? "");
+  const [agentActionFeedback, setAgentActionFeedback] = useState("");
 
   const advanceRunAndReloadMemories = useCallback(async (runId: string, resolutionNote: string) => {
     const run = await workflowBase.advanceWorkflowRun(runId, resolutionNote);
@@ -144,6 +147,80 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     setIsDetailOpen(true);
   }, [meetings.setSelectedMeetingId]);
 
+  const executeAgentAction = useCallback(async (action: MeetingAgentAction) => {
+    if (!meetings.selectedMeeting || action.kind === "none") {
+      return false;
+    }
+
+    setAgentActionFeedback("");
+
+    try {
+      switch (action.kind) {
+        case "start_workflow": {
+          const templateId = action.payload.templateId;
+          if (!templateId) {
+            throw new Error("缺少工作流模板 ID");
+          }
+          const run = await startRunForSelectedMeeting(templateId);
+          if (!run) {
+            throw new Error("工作流启动失败");
+          }
+          await workflowBase.reloadWorkflowLibrary();
+          setAgentActionFeedback(`已执行：${action.title}`);
+          return true;
+        }
+        case "advance_blocker": {
+          const runId = action.payload.runId;
+          if (!runId) {
+            throw new Error("缺少运行 ID");
+          }
+          const run = await advanceRunAndReloadMemories(runId, "Agent 推荐：已补充阻塞处理说明");
+          if (!run) {
+            throw new Error("阻塞处理失败");
+          }
+          await workflowBase.reloadWorkflowLibrary();
+          setAgentActionFeedback(`已执行：${action.title}`);
+          return true;
+        }
+        case "sync_calendar": {
+          const meetingId = action.payload.meetingId || meetings.selectedMeeting.id;
+          if (googleCalendar.isConfigured && googleCalendar.isConnected) {
+            await googleCalendar.syncMeeting(meetingId);
+          } else if (feishuCalendar.isConfigured && feishuCalendar.isConnected) {
+            await feishuCalendar.syncMeeting(meetingId);
+          } else {
+            await googleCalendar.syncMeeting(meetingId);
+          }
+          setAgentActionFeedback(`已执行：${action.title}`);
+          return true;
+        }
+        case "prepare_agenda":
+        case "update_meeting":
+          openEdit(meetings.selectedMeeting.id);
+          setAgentActionFeedback(`已打开会议编辑：${action.title}`);
+          return true;
+        case "review_memory":
+          openDetail(meetings.selectedMeeting.id);
+          setAgentActionFeedback(`已打开会议详情：${action.title}`);
+          return true;
+        default:
+          return false;
+      }
+    } catch (error) {
+      setAgentActionFeedback(error instanceof Error ? error.message : "Agent 动作执行失败");
+      return false;
+    }
+  }, [
+    advanceRunAndReloadMemories,
+    feishuCalendar,
+    googleCalendar,
+    meetings.selectedMeeting,
+    openDetail,
+    openEdit,
+    startRunForSelectedMeeting,
+    workflowBase
+  ]);
+
   const closeDetail = useCallback(() => {
     setIsDetailOpen(false);
     setIsDetailEditing(false);
@@ -186,9 +263,11 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const agent = useMemo(
     () => ({
       ...agentBase,
+      actionFeedback: agentActionFeedback,
+      executeAgentAction,
       runAgentAndReload
     }),
-    [agentBase, runAgentAndReload]
+    [agentActionFeedback, agentBase, executeAgentAction, runAgentAndReload]
   );
 
   const derived = useMemo(() => {

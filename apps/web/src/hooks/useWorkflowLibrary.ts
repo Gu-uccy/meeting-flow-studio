@@ -217,7 +217,7 @@ export function useWorkflowLibrary(isEnabled = true) {
       }
 
       setRuns((currentRuns) => mergeRunUpdate(currentRuns, data.run as ProductWorkflowRun));
-      setFeedback(data.message ?? "流程已启动");
+      setFeedback(data.message ?? "流程已启动，正在后台执行");
       return data.run;
     } catch (requestError) {
       setError(parseErrorMessage("流程启动失败，请稍后重试。", requestError));
@@ -558,7 +558,7 @@ export function useWorkflowLibrary(isEnabled = true) {
       }
 
       setRuns((currentRuns) => mergeRunUpdate(currentRuns, data.run as ProductWorkflowRun));
-      setFeedback(data.message ?? "流程已重新启动");
+      setFeedback(data.message ?? "已从失败节点断点续跑");
       return data.run;
     } catch (requestError) {
       setError(parseErrorMessage("流程重试失败，请稍后重试。", requestError));

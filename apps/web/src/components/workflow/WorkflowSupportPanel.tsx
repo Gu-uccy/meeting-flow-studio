@@ -178,9 +178,9 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
               {blockedNodeRun ? "处理阻塞并继续" : "启动流程"}
             </button>
             <div className="workflow-side-panel__secondary">
-              {selectedRun && (
+              {selectedRun?.status === "failed" && (
                 <button className="ghost-button" disabled={isWorkflowActionBusy} onClick={() => void onRetryWorkflowRun()} type="button">
-                  重新运行
+                  断点续跑
                 </button>
               )}
               {selectedRun?.status === "running" && (
