@@ -160,7 +160,6 @@ export function NodeAgentDebugStudio(props: NodeAgentDebugStudioProps) {
       <div className="node-agent-playground__grid">
         <aside className="node-agent-prompt-variables node-agent-playground__variables">
           <strong>变量面板</strong>
-          <p>向量检索结果会注入 `input.contextPackText` 等变量，右侧 Prompt 预览实时渲染。</p>
           {extendedVariableGroups.map((group) => (
             <section className="node-agent-prompt-variable-group" key={`${appId}-${group.group}`}>
               <strong>{group.group}</strong>

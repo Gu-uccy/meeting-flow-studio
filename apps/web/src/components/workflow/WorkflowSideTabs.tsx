@@ -35,7 +35,7 @@ export function WorkflowSideTabs<T extends string>({
 }
 
 export type WorkflowDetailTab = "run" | "meeting" | "memory";
-export type WorkflowExtensionTab = "agent" | "calendar";
+export type WorkflowExtensionTab = "agent" | "calendar" | "schedules";
 
 export const workflowDetailTabs: Array<{ id: WorkflowDetailTab; label: string }> = [
   { id: "run", label: "运行" },
@@ -45,5 +45,6 @@ export const workflowDetailTabs: Array<{ id: WorkflowDetailTab; label: string }>
 
 export const workflowExtensionTabs: Array<{ id: WorkflowExtensionTab; label: string }> = [
   { id: "agent", label: "工作流 Agent" },
-  { id: "calendar", label: "日历同步" }
+  { id: "calendar", label: "日历同步" },
+  { id: "schedules", label: "定时任务" }
 ];

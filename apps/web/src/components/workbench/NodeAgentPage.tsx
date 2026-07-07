@@ -65,6 +65,18 @@ function groupMappingVariableOptions(options: MappingVariableOption[]) {
   }, []);
 }
 
+function withDropdownOption(options: MappingVariableOption[], value: string): MappingVariableOption[] {
+  if (!value.trim()) {
+    return options;
+  }
+
+  if (options.some((option) => option.value === value)) {
+    return options;
+  }
+
+  return [{ group: "自定义", label: value, value }, ...options];
+}
+
 type NodeAgentStudioTab = "configure" | "debug" | "versions";
 
 // ── Component ──
@@ -72,7 +84,6 @@ type NodeAgentStudioTab = "configure" | "debug" | "versions";
 export function NodeAgentPage() {
   const {
     clearPendingNodeAgent,
-    derived,
     meetings,
     memories,
     pendingNodeAgentKey,
@@ -82,8 +93,6 @@ export function NodeAgentPage() {
 
   const aiApplications = workflow.applications;
   const isWorkflowMutating = workflow.isMutating;
-  const modelRuntimeLabel = derived.modelRuntimeLabel;
-  const nodeCapabilities = workflow.nodeCapabilities;
   const selectedMeeting = meetings.selectedMeeting;
   const workflowTemplates = workflow.templates;
   const onApplyApplicationVersion = workflow.applyApplicationVersion;
@@ -115,8 +124,6 @@ export function NodeAgentPage() {
       return { application, node, template };
     })
   );
-  const aiBackedNodeBindings = nodeAgentBindings.filter((b) => b.node.executor?.type === "aiApplication");
-
   const normalizedQuery = nodeAgentSearchQuery.trim().toLowerCase();
   const filteredNodeAgentBindings = nodeAgentBindings.filter(({ application, node, template }) => {
     const matchesRuntime = nodeAgentRuntimeFilter === "all" || (nodeAgentRuntimeFilter === "ai" && node.executor?.type === "aiApplication") || (nodeAgentRuntimeFilter === "system" && node.executor?.type !== "aiApplication");
@@ -218,8 +225,6 @@ export function NodeAgentPage() {
     return onCreateApplicationVersion(selectedApp.id, status, status === "published" ? "发布当前节点智能体配置" : "保存当前节点智能体配置快照");
   }
 
-  const inputMappings = Object.entries(selectedBinding?.node.executor?.inputMapping ?? {});
-  const outputMappings = Object.entries(selectedBinding?.node.executor?.outputMapping ?? {});
   const playgroundNodeRun = debugSession?.run.nodeRuns.find((nodeRun) => nodeRun.nodeId === selectedNode?.id);
   const promptVariableGroups = groupMappingVariableOptions([
     ...meetingMappingVariableOptions,
@@ -227,6 +232,11 @@ export function NodeAgentPage() {
       group: "Input Schema",
       label: field.label || field.key,
       value: `input.${field.key}`
+    })),
+    ...getEditableOutputSchema(selectedApp?.id ?? "").map((field) => ({
+      group: "Output Schema",
+      label: field.label || field.key,
+      value: selectedNode ? `node.${selectedNode.id}.${field.key}` : `node.${field.key}`
     })),
     ...(selectedNode
       ? [
@@ -236,6 +246,19 @@ export function NodeAgentPage() {
         ]
       : [])
   ]);
+
+  function getMappingSourceOptions(mappingType: "inputMapping" | "outputMapping") {
+    const appId = selectedApp?.id ?? "";
+    const schemaOptions =
+      mappingType === "inputMapping"
+        ? getEditableInputSchema(appId).map((field) => ({ group: "Input Schema", label: field.label || field.key, value: field.key }))
+        : getEditableOutputSchema(appId).map((field) => ({ group: "Output Schema", label: field.label || field.key, value: field.key }));
+    return schemaOptions;
+  }
+
+  function getMappingTargetOptions() {
+    return promptVariableGroups.flatMap((group) => group.options);
+  }
 
   async function runPromptPlayground() {
     if (!selectedApp || !selectedMeeting) {
@@ -295,9 +318,7 @@ export function NodeAgentPage() {
       <section className="app-hub" aria-label="节点智能体管理">
         <div className="app-hub__header">
           <div>
-            <span className="section-kicker">Mini Dify Layer</span>
             <h2>节点智能体管理</h2>
-            <p>参考 Dify 的 LLM / Knowledge / Tool 节点模型，为流程节点配置 Prompt、Schema、映射、版本与调试。</p>
           </div>
           <div className="app-hub__header-actions">
             <button className="ghost-button" onClick={() => setWorkbenchView("workspace")} type="button">返回流程画布</button>
@@ -324,17 +345,10 @@ export function NodeAgentPage() {
           ))}
         </div>
 
-        <div className="app-hub__summary" aria-label="节点智能体概览">
-          <article><span>节点智能体</span><strong>{nodeAgentApplications.length}</strong></article>
-          <article><span>已绑定节点</span><strong>{aiBackedNodeBindings.length}/{nodeAgentBindings.length}</strong></article>
-          <article><span>模型运行时</span><strong>{modelRuntimeLabel}</strong></article>
-        </div>
-
         <div className="node-agent-manager" aria-label="节点智能体搜索列表">
           <aside className="node-agent-list-panel">
             <div className="section-title">
-              <span>Agent Queue</span><h3>节点列表</h3>
-              <p>按流程节点检索、筛选并选择要管理的智能体执行器。</p>
+              <h3>节点列表</h3>
             </div>
             <label className="node-agent-search">
               <span>搜索</span>
@@ -365,17 +379,11 @@ export function NodeAgentPage() {
               <>
                 <div className="node-agent-detail__header">
                   <div>
-                    <span>{selectedTemplate.name}</span><h3>{selectedNode.title}</h3><p>{selectedNode.description}</p>
+                    <span>{selectedTemplate.name}</span><h3>{selectedNode.title}</h3>
                   </div>
                   <span className={`app-status app-status--${selectedApp?.status ?? selectedTemplate.status}`}>
                     {selectedExecutor?.type === "aiApplication" ? "AI 执行" : selectedExecutor?.type === "system" ? "系统执行" : "人工处理"}
                   </span>
-                </div>
-
-                <div className="node-agent-detail__binding">
-                  <article><span>节点类型</span><strong>{meetingNodeKindLabels[selectedNode.kind]}</strong></article>
-                  <article><span>绑定智能体</span><strong>{selectedApp?.name ?? selectedExecutor?.label ?? "未绑定智能体"}</strong></article>
-                  <article><span>入口</span><code>{selectedApp?.entrypoint ?? selectedExecutor?.runtime ?? "manual"}</code></article>
                 </div>
 
                 {activeStudioTab === "configure" && selectedExecutor && (
@@ -409,25 +417,38 @@ export function NodeAgentPage() {
                               <button className="ghost-button" onClick={() => setMappingRows(mappingKey, mappingType, [...rows, { source: "", target: "" }])} type="button">+ 新增</button>
                             </div>
                           </div>
-                          {rows.map((row, i) => (
+                          {rows.map((row, i) => {
+                            const sourceOptions = withDropdownOption(getMappingSourceOptions(mappingType), row.source).map((option) => ({
+                              label: `${option.group} / ${option.label}`,
+                              value: option.value
+                            }));
+                            const targetOptions = withDropdownOption(getMappingTargetOptions(), row.target).map((option) => ({
+                              label: `${option.group} / ${option.label}`,
+                              value: option.value
+                            }));
+
+                            return (
                             <div className="node-agent-map-row" key={`${mappingType}-${i}`}>
-                              <input aria-label="source" onChange={(e) => setMappingRows(mappingKey, mappingType, rows.map((r, j) => j === i ? { ...r, source: e.target.value } : r))} placeholder="source" value={row.source} />
-                              <input aria-label="target" onChange={(e) => setMappingRows(mappingKey, mappingType, rows.map((r, j) => j === i ? { ...r, target: e.target.value } : r))} placeholder="target" value={row.target} />
+                              <Dropdown
+                                ariaLabel="source"
+                                onChange={(value) => setMappingRows(mappingKey, mappingType, rows.map((r, j) => j === i ? { ...r, source: value } : r))}
+                                options={sourceOptions.length > 0 ? sourceOptions : [{ label: row.source || "source", value: row.source || "" }]}
+                                value={row.source || sourceOptions[0]?.value || ""}
+                              />
+                              <Dropdown
+                                ariaLabel="target"
+                                onChange={(value) => setMappingRows(mappingKey, mappingType, rows.map((r, j) => j === i ? { ...r, target: value } : r))}
+                                options={targetOptions.length > 0 ? targetOptions : [{ label: row.target || "target", value: row.target || "" }]}
+                                value={row.target || targetOptions[0]?.value || ""}
+                              />
                               <button className="ghost-button" onClick={() => setMappingRows(mappingKey, mappingType, rows.filter((_, j) => j !== i))} type="button">删除</button>
                             </div>
-                          ))}
+                          )})}
                           {rows.length === 0 && <div className="node-agent-inline-empty">暂无映射</div>}
                         </section>
                       );
                     })}
                     <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void saveSelectedNodeMappings()} type="button">保存映射</button>
-                  </div>
-                )}
-
-                {activeStudioTab === "configure" && (
-                  <div className="node-agent-card__maps">
-                    <div><span>Input Mapping</span>{inputMappings.length > 0 ? inputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no inputs</code>}</div>
-                    <div><span>Output Mapping</span>{outputMappings.length > 0 ? outputMappings.map(([s, t]) => <code key={s}>{s} -&gt; {t}</code>) : <code>no outputs</code>}</div>
                   </div>
                 )}
 
@@ -552,15 +573,6 @@ export function NodeAgentPage() {
               <div className="node-agent-empty">请选择一个流程节点</div>
             )}
           </section>
-        </div>
-
-        <div className="node-capability-strip" aria-label="节点能力矩阵">
-          {nodeCapabilities.map((c) => (
-            <article className={`node-capability node-capability--${c.maturity}`} key={c.kind}>
-              <span>{c.difyLikeName}</span><strong>{c.name}</strong>
-              <small>{c.maturity === "ready" ? "可运行" : c.maturity === "partial" ? "部分接入" : "规划中"}</small>
-            </article>
-          ))}
         </div>
       </section>
     </>

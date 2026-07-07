@@ -543,6 +543,7 @@ export function useMeetings(isEnabled = true) {
     cancelMeeting,
     saveMeetingEdits,
     upsertMeeting,
+    reloadMeetings: loadMeetings,
     updateActionItemStatus,
     markNotificationSent
   };

@@ -1457,6 +1457,176 @@ body::before, body::after {
   grid-column: 1 / -1;
 }
 
+.run-latency-waterfall {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.run-latency-waterfall--compact {
+  background: #ffffff;
+  border: 0;
+  border-radius: 8px;
+  gap: 8px;
+  padding: 0;
+}
+
+.run-latency-waterfall__header {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.run-latency-waterfall__header strong {
+  color: #111827;
+  font-size: 0.84rem;
+}
+
+.run-latency-waterfall__axis {
+  border-bottom: 1px dashed #dbe3ea;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  height: 18px;
+  position: relative;
+}
+
+.run-latency-waterfall__axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.run-latency-waterfall__axis span:first-child {
+  transform: none;
+}
+
+.run-latency-waterfall__axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.run-latency-waterfall__rows {
+  display: grid;
+  gap: 8px;
+}
+
+.run-latency-waterfall__row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(96px, 128px) minmax(0, 1fr) 52px;
+}
+
+.run-latency-waterfall__label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-latency-waterfall__label strong {
+  color: #111827;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-latency-waterfall__label small {
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.run-latency-waterfall__track {
+  background: #eef2f6;
+  border-radius: 999px;
+  height: 22px;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.run-latency-waterfall__bar {
+  align-items: center;
+  border-radius: 999px;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-width: 28px;
+  position: absolute;
+  top: 0;
+}
+
+.run-latency-waterfall__bar span {
+  color: #ffffff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  overflow: hidden;
+  padding: 0 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-latency-waterfall__bar--success {
+  background: linear-gradient(90deg, #5faaa8, #8fc0c5);
+}
+
+.run-latency-waterfall__bar--running {
+  background: linear-gradient(90deg, #60a5fa, #93c5fd);
+}
+
+.run-latency-waterfall__bar--blocked,
+.run-latency-waterfall__bar--failed {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.run-latency-waterfall__bar--skipped,
+.run-latency-waterfall__bar--pending {
+  background: linear-gradient(90deg, #94a3b8, #cbd5e1);
+}
+
+.run-latency-waterfall__placeholder,
+.run-latency-waterfall__meta code {
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.run-latency-waterfall__placeholder {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  padding-left: 10px;
+}
+
+.run-latency-waterfall__meta {
+  text-align: right;
+}
+
+.run-latency-waterfall__empty,
+.run-latency-waterfall__hint {
+  color: #94a3b8;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__row {
+  grid-template-columns: minmax(84px, 108px) minmax(0, 1fr) 44px;
+}
+
+.run-latency-waterfall--compact .run-latency-waterfall__track {
+  height: 18px;
+}
+
+.app-debug-panel--wide {
+  grid-column: 1 / -1;
+}
+
 .run-detail__section-title strong {
   color: #111827;
   font-size: 0.95rem;
@@ -6257,6 +6427,26 @@ body:has(.retool-shell) {
 .workbench-grid .workflow-support-panel .knowledge-vector-search__meta {
   color: #6d8279;
   font-size: 0.72rem;
+}
+
+.workbench-grid .workflow-support-panel .knowledge-index-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e6eee9;
+}
+
+.workflow-side-panel__usage,
+.debug-node-row__usage {
+  color: #64748b;
+  display: grid;
+  font-size: 0.74rem;
+  gap: 4px;
+}
+
+.debug-node-row__usage code {
+  color: #31585a;
 }
 
 .workbench-grid .workflow-support-panel .memory-row--vector {

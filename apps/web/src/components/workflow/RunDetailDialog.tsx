@@ -1,5 +1,6 @@
 import type { MeetingRecord, ProductWorkflowRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import { Modal } from "../common/Modal";
+import { RunLatencyWaterfall } from "./RunLatencyWaterfall";
 import {
   formatRunTimestamp,
   getConfigDriftCount,
@@ -38,8 +39,13 @@ export function RunDetailDialog({ meeting, onClose, run, template }: RunDetailDi
           <article><span>开始</span><strong>{formatRunTimestamp(run.startedAt)}</strong></article>
           <article><span>结束</span><strong>{formatRunTimestamp(run.endedAt)}</strong></article>
           <article><span>耗时</span><strong>{run.durationSeconds}s</strong></article>
+          {run.usage?.totalTokens ? <article><span>Token</span><strong>{run.usage.totalTokens}</strong></article> : null}
           <article><span>节点</span><strong>{run.nodeRuns.length}</strong></article>
           <article><span>配置变更</span><strong>{run.configSnapshot ? `${configDriftCount} 项` : "无快照"}</strong></article>
+        </section>
+
+        <section className="run-detail__section run-detail__section--wide">
+          <RunLatencyWaterfall run={run} template={template} variant="full" />
         </section>
 
         <div className="run-detail__grid">

@@ -95,17 +95,19 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     const run = await workflowBase.advanceWorkflowRun(runId, resolutionNote);
     if (run) {
       void memories.reloadMemories();
+      void meetings.reloadMeetings();
     }
     return run;
-  }, [memories.reloadMemories, workflowBase.advanceWorkflowRun]);
+  }, [meetings.reloadMeetings, memories.reloadMemories, workflowBase.advanceWorkflowRun]);
 
   const retryRunAndReloadMemories = useCallback(async (runId: string) => {
     const run = await workflowBase.retryWorkflowRun(runId);
     if (run) {
       void memories.reloadMemories();
+      void meetings.reloadMeetings();
     }
     return run;
-  }, [memories.reloadMemories, workflowBase.retryWorkflowRun]);
+  }, [meetings.reloadMeetings, memories.reloadMemories, workflowBase.retryWorkflowRun]);
 
   const startRunForSelectedMeeting = useCallback(async (templateId: string) => {
     if (!meetings.selectedMeeting) {
@@ -115,18 +117,20 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
     const run = await workflowBase.startWorkflowRun(meetings.selectedMeeting.id, templateId);
     if (run) {
       void memories.reloadMemories();
+      void meetings.reloadMeetings();
     }
     return run;
-  }, [meetings.selectedMeeting, memories.reloadMemories, workflowBase.startWorkflowRun]);
+  }, [meetings.reloadMeetings, meetings.selectedMeeting, memories.reloadMemories, workflowBase.startWorkflowRun]);
 
   const runAgentAndReload = useCallback(async () => {
     const run = await agentBase.runAgent();
     if (run) {
       void workflowBase.reloadWorkflowLibrary();
       void memories.reloadMemories();
+      void meetings.reloadMeetings();
     }
     return run;
-  }, [agentBase.runAgent, memories.reloadMemories, workflowBase.reloadWorkflowLibrary]);
+  }, [agentBase.runAgent, meetings.reloadMeetings, memories.reloadMemories, workflowBase.reloadWorkflowLibrary]);
 
   const openDetail = useCallback((meetingId: string) => {
     meetings.setSelectedMeetingId(meetingId);

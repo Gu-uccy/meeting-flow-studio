@@ -6,7 +6,6 @@ import type {
   AiApplicationOutputField,
   AiApplicationPromptConfig,
   AiApplicationVersion,
-  MiniDifyNodeCapability,
   ProductWorkflowEdge,
   ProductWorkflowNode,
   ProductWorkflowNodeExecutor,
@@ -24,10 +23,6 @@ type WorkflowRunsResponse = {
 
 type AiApplicationsResponse = {
   items: AiApplication[];
-};
-
-type NodeCapabilitiesResponse = {
-  items: MiniDifyNodeCapability[];
 };
 
 type WorkflowRunMutationResponse = {
@@ -92,7 +87,6 @@ function mergeRunUpdate(currentRuns: ProductWorkflowRun[], run: ProductWorkflowR
 
 export function useWorkflowLibrary(isEnabled = true) {
   const [applications, setApplications] = useState<AiApplication[]>([]);
-  const [nodeCapabilities, setNodeCapabilities] = useState<MiniDifyNodeCapability[]>([]);
   const [templates, setTemplates] = useState<ProductWorkflowTemplate[]>([]);
   const [runs, setRuns] = useState<ProductWorkflowRun[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -108,7 +102,6 @@ export function useWorkflowLibrary(isEnabled = true) {
   useEffect(() => {
     if (!isEnabled) {
       setApplications([]);
-      setNodeCapabilities([]);
       setTemplates([]);
       setRuns([]);
       setIsLoading(false);
@@ -170,19 +163,17 @@ export function useWorkflowLibrary(isEnabled = true) {
     setError("");
 
     try {
-      const [templatesResponse, runsResponse, applicationsResponse, nodeCapabilitiesResponse] = await Promise.all([
+      const [templatesResponse, runsResponse, applicationsResponse] = await Promise.all([
         apiClient("/api/workflows/templates"),
         apiClient("/api/workflows/runs"),
-        apiClient("/api/apps"),
-        apiClient("/api/catalog/node-capabilities")
+        apiClient("/api/apps")
       ]);
 
-      const [templatesData, runsData, applicationsData, nodeCapabilitiesData] = (await Promise.all([
+      const [templatesData, runsData, applicationsData] = (await Promise.all([
         templatesResponse.json(),
         runsResponse.json(),
-        applicationsResponse.json(),
-        nodeCapabilitiesResponse.json()
-      ])) as [WorkflowTemplatesResponse, WorkflowRunsResponse, AiApplicationsResponse, NodeCapabilitiesResponse];
+        applicationsResponse.json()
+      ])) as [WorkflowTemplatesResponse, WorkflowRunsResponse, AiApplicationsResponse];
 
       if (!templatesResponse.ok) {
         throw new Error("工作流模板加载失败，请稍后重试。");
@@ -196,12 +187,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         throw new Error("AI 应用目录加载失败，请稍后重试。");
       }
 
-      if (!nodeCapabilitiesResponse.ok) {
-        throw new Error("节点能力目录加载失败，请稍后重试。");
-      }
-
       setApplications(applicationsData.items);
-      setNodeCapabilities(nodeCapabilitiesData.items);
       setTemplates(templatesData.items);
       setRuns(runsData.items);
     } catch (requestError) {
@@ -692,7 +678,6 @@ export function useWorkflowLibrary(isEnabled = true) {
     feedback,
     isLoading,
     isMutating,
-    nodeCapabilities,
     reloadWorkflowLibrary: loadWorkflowLibrary,
     runs,
     saveNodeConfig,

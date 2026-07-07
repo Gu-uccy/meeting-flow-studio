@@ -234,6 +234,7 @@ export function WorkflowTemplatePanel() {
             onSyncFeishuCalendar={() => void onSyncFeishuCalendar()}
             onSyncGoogleCalendar={() => void onSyncGoogleCalendar()}
             selectedMeeting={selectedMeeting}
+            workflowTemplates={workflowTemplates}
           />
         )}
       </section>

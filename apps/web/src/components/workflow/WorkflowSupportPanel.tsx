@@ -9,6 +9,8 @@ import {
   type ProductWorkflowTemplate
 } from "@meeting-flow/shared";
 import { useKnowledgeSearch } from "../../hooks/useKnowledgeSearch";
+import { useKnowledgeIndex } from "../../hooks/useKnowledgeIndex";
+import { RunLatencyWaterfall } from "./RunLatencyWaterfall";
 import { nodeRunLabels, runStatusLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowDetailTabs, type WorkflowDetailTab } from "./WorkflowSideTabs";
 
@@ -82,9 +84,10 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
 
   const [activeTab, setActiveTab] = useState<WorkflowDetailTab>("run");
   const knowledgeSearch = useKnowledgeSearch(selectedMeeting?.id ?? "", Boolean(selectedMeeting));
+  const knowledgeIndex = useKnowledgeIndex(activeTab === "memory");
 
   const runSummary = selectedRun
-    ? `${runStatusLabels[selectedRun.status]} · ${selectedRun.durationSeconds}s`
+    ? `${runStatusLabels[selectedRun.status]} · ${selectedRun.durationSeconds}s${selectedRun.usage?.totalTokens ? ` · ${selectedRun.usage.totalTokens} tokens` : ""}`
     : "尚未运行";
 
   return (
@@ -129,6 +132,14 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
               <strong>运行日志</strong>
               <span>{selectedRun ? `${selectedRun.logs.length} 条` : "暂无"}</span>
             </div>
+            {selectedRun?.usage && selectedRun.usage.totalTokens > 0 ? (
+              <p className="workflow-side-panel__usage">
+                Token 用量：输入 {selectedRun.usage.inputTokens} / 输出 {selectedRun.usage.outputTokens} / 合计 {selectedRun.usage.totalTokens}
+              </p>
+            ) : null}
+            {selectedRun ? (
+              <RunLatencyWaterfall run={selectedRun} template={selectedTemplate} variant="compact" />
+            ) : null}
             {selectedRun ? (
               selectedRun.logs.slice(-6).map((log) => (
                 <button
@@ -262,6 +273,28 @@ export function WorkflowSupportPanel(props: WorkflowSupportPanelProps) {
           </div>
 
           <section className="meeting-memory-strip workflow-side-panel__section" aria-label="会议记忆">
+            <div className="knowledge-index-panel" aria-label="向量索引">
+              <div className="ide-section-title">
+                <strong>向量索引</strong>
+                <span>{knowledgeIndex.isLoading ? "同步中" : `${knowledgeIndex.index?.chunkCount ?? 0} 分片`}</span>
+              </div>
+              {knowledgeIndex.index ? (
+                <p className="knowledge-vector-search__meta">
+                  {knowledgeIndex.index.embeddingModel} · {knowledgeIndex.index.dimensions} 维 · 分片 {knowledgeIndex.index.chunking.chunkSize}/{knowledgeIndex.index.chunking.chunkOverlap}
+                </p>
+              ) : null}
+              <button
+                className="ghost-button"
+                disabled={isWorkflowActionBusy || knowledgeIndex.isRebuilding}
+                onClick={() => void knowledgeIndex.rebuildIndex()}
+                type="button"
+              >
+                {knowledgeIndex.isRebuilding ? "重建中..." : "重建索引"}
+              </button>
+              {knowledgeIndex.error ? <p className="memory-empty">{knowledgeIndex.error}</p> : null}
+              {knowledgeIndex.feedback ? <p className="workflow-side-panel__feedback">{knowledgeIndex.feedback}</p> : null}
+            </div>
+
             <div className="knowledge-vector-search" aria-label="向量检索">
               <label>
                 <span>向量检索</span>

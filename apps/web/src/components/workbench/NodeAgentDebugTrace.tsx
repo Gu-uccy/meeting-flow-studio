@@ -1,5 +1,6 @@
 import type { AiApplication, MeetingRecordWithPermissions, ProductNodeRun, ProductWorkflowRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import { formatDateTime } from "../../lib/format";
+import { RunLatencyWaterfall } from "../workflow/RunLatencyWaterfall";
 
 type NodeAgentDebugTraceProps = {
   app: AiApplication;
@@ -41,9 +42,8 @@ export function NodeAgentDebugTrace(props: NodeAgentDebugTraceProps) {
     <section className="app-debug-console node-agent-debug-studio__trace" aria-label="调试 Trace">
       <div className="app-debug-console__header">
         <div>
-          <span className="section-kicker">Debug Trace</span>
           <h3>{app.name}</h3>
-          <p>{meeting?.title ?? run.name} / {run.status} / {run.durationSeconds}s</p>
+          <p>{meeting?.title ?? run.name} / {run.status} / {run.durationSeconds}s{run.usage?.totalTokens ? ` / ${run.usage.totalTokens} tokens` : ""}</p>
         </div>
         <span className={`run-status status-${run.status}`}>{run.status}</span>
       </div>
@@ -52,9 +52,10 @@ export function NodeAgentDebugTrace(props: NodeAgentDebugTraceProps) {
           <div className="app-debug-panel__title"><span>Input</span><strong>{app.entrypoint}</strong></div>
           <pre>{JSON.stringify(inputs, null, 2)}</pre>
         </article>
-        <article className="app-debug-panel">
-          <div className="app-debug-panel__title"><span>API</span><strong>{app.apiEndpoint}</strong></div>
-          <pre>{`curl -X POST http://127.0.0.1:8787/api/apps/${app.id}/debug \\\n  -H "Authorization: Bearer <token>" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify({ inputs })}'`}</pre>
+      </div>
+      <div className="app-debug-console__grid app-debug-console__grid--wide">
+        <article className="app-debug-panel app-debug-panel--wide">
+          <RunLatencyWaterfall run={run} template={template} variant="full" />
         </article>
       </div>
       <div className="app-debug-console__grid app-debug-console__grid--wide">
@@ -71,6 +72,15 @@ export function NodeAgentDebugTrace(props: NodeAgentDebugTraceProps) {
                     <small>{formatNodeRunDuration(nodeRun)}</small>
                   </div>
                   <div className="debug-node-row__meta"><code>{nodeRun.nodeId}</code><span>{formatNodeRunWindow(nodeRun)}</span></div>
+                  {typeof nodeRun.outputPayload?.inputTokens === "number" || typeof nodeRun.outputPayload?.outputTokens === "number" ? (
+                    <div className="debug-node-row__usage">
+                      <span>Token</span>
+                      <code>
+                        in {Number(nodeRun.outputPayload?.inputTokens ?? 0)} / out {Number(nodeRun.outputPayload?.outputTokens ?? 0)}
+                        {typeof nodeRun.outputPayload?.responseFormat === "string" ? ` / ${nodeRun.outputPayload.responseFormat}` : ""}
+                      </code>
+                    </div>
+                  ) : null}
                   {nodeRun.errorMessage ? <div className="debug-node-row__error"><span>Error</span><code>{nodeRun.errorMessage}</code></div> : null}
                   <div className="debug-trace-payloads">
                     <div><span>Input</span><pre>{stringifyTracePayload(nodeRun.inputPayload)}</pre></div>

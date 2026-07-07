@@ -1,7 +1,14 @@
 import { useState } from "react";
-import type { MeetingAgentRun, MeetingRecord } from "@meeting-flow/shared";
+import type { MeetingAgentRun, MeetingRecord, ProductWorkflowTemplate } from "@meeting-flow/shared";
+import { useWorkflowSchedules } from "../../hooks/useWorkflowSchedules";
 import { agentActionPriorityLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowExtensionTabs, type WorkflowExtensionTab } from "./WorkflowSideTabs";
+
+const cronPresets = [
+  { label: "每日 08:00", value: "0 8 * * *" },
+  { label: "每周一 09:00", value: "0 9 * * 1" },
+  { label: "每小时整点", value: "0 * * * *" }
+] as const;
 
 type WorkflowMorePanelProps = {
   agentError: string;
@@ -26,6 +33,7 @@ type WorkflowMorePanelProps = {
   onSyncFeishuCalendar: () => void;
   onSyncGoogleCalendar: () => void;
   selectedMeeting: MeetingRecord | null;
+  workflowTemplates: ProductWorkflowTemplate[];
 };
 
 export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
@@ -51,10 +59,14 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
     onRunAgent,
     onSyncFeishuCalendar,
     onSyncGoogleCalendar,
-    selectedMeeting
+    selectedMeeting,
+    workflowTemplates
   } = props;
 
   const [activeTab, setActiveTab] = useState<WorkflowExtensionTab>("agent");
+  const [scheduleTemplateId, setScheduleTemplateId] = useState("");
+  const [scheduleCron, setScheduleCron] = useState<string>(cronPresets[0].value);
+  const schedules = useWorkflowSchedules(true);
 
   return (
     <div className="workflow-support-panel workflow-support-panel--tabbed workflow-support-panel--extension" aria-label="拓展工具">
@@ -140,6 +152,89 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
           ) : (
             <p className="memory-empty">请先从左侧选择一场会议，再同步日历。</p>
           )}
+        </div>
+      )}
+
+      {activeTab === "schedules" && (
+        <div className="workflow-side-panel" role="tabpanel">
+          <div className="workflow-side-panel__hero">
+            <span className="section-kicker">拓展工具</span>
+            <strong>定时任务</strong>
+            <p>按 Cron 表达式自动启动工作流。</p>
+          </div>
+
+          <section className="workflow-side-panel__section" aria-label="创建定时任务">
+            <div className="ide-section-title">
+              <strong>新建计划</strong>
+              <span>{schedules.isLoading ? "加载中" : `${schedules.items.length} 条`}</span>
+            </div>
+            <label>
+              <span>工作流模板</span>
+              <select
+                onChange={(event) => setScheduleTemplateId(event.target.value)}
+                value={scheduleTemplateId || workflowTemplates[0]?.id || ""}
+              >
+                {workflowTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Cron 表达式</span>
+              <input onChange={(event) => setScheduleCron(event.target.value)} placeholder="0 8 * * *" value={scheduleCron} />
+            </label>
+            <div className="filter-strip">
+              {cronPresets.map((preset) => (
+                <button
+                  className={`filter-chip${scheduleCron === preset.value ? " is-active" : ""}`}
+                  key={preset.value}
+                  onClick={() => setScheduleCron(preset.value)}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="primary-button"
+              disabled={isWorkflowActionBusy || schedules.isMutating || !scheduleTemplateId && !workflowTemplates[0]?.id}
+              onClick={() => void schedules.createSchedule(scheduleTemplateId || workflowTemplates[0]?.id || "", scheduleCron)}
+              type="button"
+            >
+              {schedules.isMutating ? "创建中..." : "创建定时任务"}
+            </button>
+            {schedules.error ? <p className="memory-empty">{schedules.error}</p> : null}
+            {schedules.feedback ? <p className="workflow-side-panel__feedback">{schedules.feedback}</p> : null}
+          </section>
+
+          <section className="workflow-side-panel__section" aria-label="定时任务列表">
+            <div className="ide-section-title">
+              <strong>已创建任务</strong>
+            </div>
+            {schedules.items.length === 0 ? (
+              <p className="memory-empty">暂无定时任务。</p>
+            ) : (
+              schedules.items.map((schedule) => {
+                const template = workflowTemplates.find((item) => item.id === schedule.templateId);
+                return (
+                  <article className="ide-list-row ide-list-row--action" key={schedule.id}>
+                    <div>
+                      <strong>{template?.name ?? schedule.templateId}</strong>
+                      <small>{schedule.cronExpression}{schedule.lastTriggeredAt ? ` · 上次 ${new Date(schedule.lastTriggeredAt).toLocaleString("zh-CN")}` : ""}</small>
+                    </div>
+                    <button
+                      className="ghost-button"
+                      disabled={isWorkflowActionBusy || schedules.isMutating}
+                      onClick={() => void schedules.deleteSchedule(schedule.id)}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  </article>
+                );
+              })
+            )}
+          </section>
         </div>
       )}
     </div>
