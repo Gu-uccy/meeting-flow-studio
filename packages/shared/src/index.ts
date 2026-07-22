@@ -788,6 +788,7 @@ export type ProductWorkflowTemplate = {
   description: string;
   category: MeetingType;
   status: "draft" | "published";
+  workspaceId: string;
   nodes: ProductWorkflowNode[];
   edges: ProductWorkflowEdge[];
   updatedAt: string;
@@ -963,6 +964,7 @@ function buildNodeExecutor(templateId: string, node: Pick<ProductWorkflowNode, "
 export function ensureProductWorkflowNodeExecutors(template: ProductWorkflowTemplate): ProductWorkflowTemplate {
   return {
     ...template,
+    workspaceId: template.workspaceId?.trim() || DEFAULT_WORKSPACE_ID,
     nodes: template.nodes.map((node) => ({
       ...node,
       executor: node.executor ?? buildNodeExecutor(template.id, node)
@@ -1623,6 +1625,7 @@ export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
     description: "覆盖并行准备、条件审批分支、汇合通知与会后并行跟进，演示多数真实会议编排场景。",
     category: "weekly",
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     updatedAt: "2026-07-18T10:40:00.000Z",
     nodes: fullMeetingLifecycleNodes,
     edges: fullMeetingLifecycleEdges
@@ -1633,6 +1636,7 @@ export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
     description: "适合团队周会，自动生成议程、拉取上周行动项并同步本周待办。",
     category: "weekly",
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     updatedAt: "2026-06-01T03:20:00.000Z",
     nodes: commonMeetingNodes,
     edges: [
@@ -1648,6 +1652,7 @@ export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
     description: "面向客户沟通和复盘会议，重点处理客户上下文、审批分支和会后任务分发。",
     category: "client",
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     updatedAt: "2026-06-03T06:10:00.000Z",
     nodes: commonMeetingNodes.map((node) =>
       node.id === "policy"
@@ -1676,6 +1681,7 @@ export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
     description: "用于需要明确结论和审批链路的决策会议，强调规则判断和回放审计。",
     category: "review",
     status: "draft",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     updatedAt: "2026-06-05T09:00:00.000Z",
     nodes: commonMeetingNodes.map((node) =>
       node.id === "agenda"

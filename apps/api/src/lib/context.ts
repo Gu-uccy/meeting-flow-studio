@@ -21,6 +21,7 @@ import { saveMeetingMemories } from "../memoryStore.js";
 import { executeWorkflowRun, type WorkflowExecutionOptions } from "../services/executor.js";
 import { executeWorkflowRunSync } from "../services/workflowJobRunner.js";
 import { buildAiApplicationsFromTemplates } from "@meeting-flow/shared";
+import { filterTemplatesForMeetingWorkspace } from "./workspaceAccess.js";
 
 // ── App context shared across all route modules ──
 
@@ -172,11 +173,14 @@ export function selectWorkflowTemplate(
   templates: ProductWorkflowTemplate[],
   templateId?: string
 ) {
-  return (
-    (templateId ? templates.find((t) => t.id === templateId) : null) ??
-    templates.find((t) => t.category === meeting.type) ??
-    templates[0]
-  );
+  const scoped = filterTemplatesForMeetingWorkspace(templates, meeting);
+  const requestedId = templateId?.trim();
+
+  if (requestedId) {
+    return scoped.find((t) => t.id === requestedId);
+  }
+
+  return scoped.find((t) => t.category === meeting.type) ?? scoped[0];
 }
 
 export async function createWorkflowRun(

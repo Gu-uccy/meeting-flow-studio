@@ -1,5 +1,12 @@
-import type { MeetingRecord, PublicUser, User, UserRole, Workspace } from "@meeting-flow/shared";
-import { DEFAULT_WORKSPACE_ID } from "@meeting-flow/shared";
+import type {
+  MeetingRecord,
+  ProductWorkflowTemplate,
+  PublicUser,
+  User,
+  UserRole,
+  Workspace
+} from "@meeting-flow/shared";
+import { DEFAULT_WORKSPACE_ID, ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 
 export function isPlatformAdmin(user: Pick<PublicUser | User, "role">) {
   return user.role === "admin";
@@ -122,4 +129,39 @@ export function bindMeetingParticipants(meeting: MeetingRecord, user: PublicUser
 
 export function filterMeetingsForUser<T extends MeetingRecord>(meetings: T[], user: PublicUser) {
   return meetings.filter((meeting) => canAccessMeeting(user, meeting));
+}
+
+export function resolveTemplateWorkspaceId(template: Pick<ProductWorkflowTemplate, "workspaceId">) {
+  return template.workspaceId?.trim() || DEFAULT_WORKSPACE_ID;
+}
+
+/** Template access: platform admin, or member whose active workspace matches the template. */
+export function canAccessTemplate(user: PublicUser, template: ProductWorkflowTemplate) {
+  const templateWorkspaceId = resolveTemplateWorkspaceId(template);
+  if (isPlatformAdmin(user)) {
+    return true;
+  }
+
+  if (!hasWorkspaceMembership(user, templateWorkspaceId)) {
+    return false;
+  }
+
+  return (user.workspaceId || DEFAULT_WORKSPACE_ID) === templateWorkspaceId;
+}
+
+export function filterTemplatesForUser<T extends ProductWorkflowTemplate>(templates: T[], user: PublicUser) {
+  return templates
+    .map((template) => ensureProductWorkflowNodeExecutors(template) as T)
+    .filter((template) => canAccessTemplate(user, template));
+}
+
+/** Prefer templates in the same workspace as the meeting (or explicit id within that workspace). */
+export function filterTemplatesForMeetingWorkspace<T extends ProductWorkflowTemplate>(
+  templates: T[],
+  meeting: Pick<MeetingRecord, "workspaceId">
+) {
+  const meetingWorkspaceId = meeting.workspaceId || DEFAULT_WORKSPACE_ID;
+  return templates
+    .map((template) => ensureProductWorkflowNodeExecutors(template) as T)
+    .filter((template) => resolveTemplateWorkspaceId(template) === meetingWorkspaceId);
 }
