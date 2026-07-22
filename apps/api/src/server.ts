@@ -31,6 +31,7 @@ import { agentRoutes } from "./routes/agent.js";
 import { serviceApiRoutes } from "./routes/serviceApi.js";
 import { memoryRoutes } from "./routes/memories.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
+import { chatRoutes } from "./routes/chat.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 
 // ── Create server ──
