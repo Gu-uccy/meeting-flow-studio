@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: meeting-flow-postgres
+    environment:
+      POSTGRES_USER: meeting_flow
+      POSTGRES_PASSWORD: meeting_flow
+      POSTGRES_DB: meeting_flow
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meeting_flow -d meeting_flow"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    tmpfs:
+      - /var/lib/postgresql/data

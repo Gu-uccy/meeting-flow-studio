@@ -505,6 +505,7 @@ export function useMeetings(isEnabled = true) {
   }, [filteredMeetings, meetings, selectedMeetingId]);
 
   return {
+    allMeetings: meetings,
     createMeeting,
     deleteMeeting,
     error,
@@ -543,6 +544,7 @@ export function useMeetings(isEnabled = true) {
     cancelMeeting,
     saveMeetingEdits,
     upsertMeeting,
+    reloadMeetings: loadMeetings,
     updateActionItemStatus,
     markNotificationSent
   };
