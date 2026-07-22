@@ -1,7 +1,8 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fjwt from "@fastify/jwt";
-import type { MeetingRecord, MeetingMemory, ProductWorkflowRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
+import type { MeetingRecord, MeetingMemory, ProductWorkflowRun, ProductWorkflowTemplate, UserRole } from "@meeting-flow/shared";
+import { DEFAULT_WORKSPACE_ID } from "@meeting-flow/shared";
 import { ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 import { healthRoutes } from "../routes/health.js";
 import { authRoutes } from "../routes/auth.js";
@@ -14,6 +15,10 @@ import { knowledgeRoutes } from "../routes/knowledge.js";
 import { serviceApiRoutes } from "../routes/serviceApi.js";
 import { aiRoutes } from "../routes/ai.js";
 import { integrationRoutes } from "../routes/integrations.js";
+import { workspaceRoutes } from "../routes/workspaces.js";
+import { hashPassword, signToken, toPublicUser } from "../services/auth.js";
+import { createUser, migrateExistingMeetings } from "../userStore.js";
+import { loadWorkspaces } from "../workspaceStore.js";
 
 export interface TestContext {
   meetings: MeetingRecord[];
@@ -105,6 +110,9 @@ export async function buildTestApp(ctx?: Partial<TestContext>) {
 
   const appCtx = { meetings, meetingMemories, workflowRuns, workflowTemplates };
 
+  await loadWorkspaces();
+  await migrateExistingMeetings();
+
   // Register all routes
   await app.register(healthRoutes);
   await app.register(authRoutes);
@@ -117,6 +125,7 @@ export async function buildTestApp(ctx?: Partial<TestContext>) {
   await app.register(async (subApp) => knowledgeRoutes(subApp, appCtx));
   await app.register(aiRoutes);
   await app.register(integrationRoutes);
+  await app.register(workspaceRoutes);
 
   await app.ready();
   return app;
@@ -137,6 +146,23 @@ export async function registerAndGetToken(app: ReturnType<typeof Fastify>, email
     throw new Error(`Registration failed (${res.statusCode}): ${JSON.stringify(body)}`);
   }
   return { token: body.token, user: body.user };
+}
+
+/** Helper: register a user with a specific role and return the auth token. */
+export async function registerWithRole(
+  app: ReturnType<typeof Fastify>,
+  role: UserRole,
+  email?: string,
+  password = "Test123456",
+  name = "测试用户",
+  workspaceId = DEFAULT_WORKSPACE_ID
+) {
+  const uniqueEmail = email ?? `${role}-${Date.now()}-${++registrationCounter}@test.com`;
+  const passwordHash = await hashPassword(password);
+  const user = await createUser(uniqueEmail, name, passwordHash, role, workspaceId);
+  const publicUser = await toPublicUser(user);
+  const token = signToken(app, publicUser);
+  return { token, user: publicUser };
 }
 
 /** Helper: create a meeting via API */

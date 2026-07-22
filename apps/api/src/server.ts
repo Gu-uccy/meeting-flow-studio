@@ -11,6 +11,7 @@ import { syncVectorKnowledgeIndex } from "./vectorStore.js";
 import { listKnowledgeDocuments } from "./knowledgeDocumentStore.js";
 import { loadWorkflowRuns, loadWorkflowTemplates } from "./workflowStore.js";
 import { loadUsers, migrateExistingMeetings } from "./userStore.js";
+import { loadWorkspaces } from "./workspaceStore.js";
 import { enqueueWorkflowRunJob } from "./services/workflowJobRunner.js";
 import { recordScheduleExecution } from "./services/scheduler.js";
 import { buildWorkflowExecutionOptions } from "./lib/executionOptions.js";
@@ -30,6 +31,7 @@ import { agentRoutes } from "./routes/agent.js";
 import { serviceApiRoutes } from "./routes/serviceApi.js";
 import { memoryRoutes } from "./routes/memories.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
 
 // ── Create server ──
 

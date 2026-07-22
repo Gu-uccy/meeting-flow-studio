@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { buildTestApp, registerAndGetToken, createTestMeeting } from "../lib/testApp.js";
+import { buildTestApp, registerAndGetToken, registerWithRole, createTestMeeting } from "../lib/testApp.js";
 import type { FastifyInstance } from "fastify";
 
 describe("Meetings API", () => {
@@ -159,5 +159,116 @@ describe("Meetings API", () => {
   it("Meeting endpoints require auth", async () => {
     const res = await app.inject({ method: "GET", url: "/api/meetings" });
     expect(res.statusCode).toBe(401);
+  });
+
+  describe("permission checks", () => {
+    let ownerToken: string;
+    let viewerToken: string;
+    let otherEditorToken: string;
+    let meetingId: string;
+
+    beforeAll(async () => {
+      const owner = await registerWithRole(app, "editor", undefined, "Test123456", "会议所有者");
+      ownerToken = owner.token;
+      const viewer = await registerWithRole(app, "viewer", undefined, "Test123456", "观察用户");
+      viewerToken = viewer.token;
+      const otherEditor = await registerWithRole(app, "editor", undefined, "Test123456", "其他编辑");
+      otherEditorToken = otherEditor.token;
+
+      const { meeting } = await createTestMeeting(app, ownerToken, { title: "权限测试会议" });
+      meetingId = meeting.id;
+    });
+
+    it("viewer cannot create meetings", async () => {
+      const { statusCode } = await createTestMeeting(app, viewerToken, { title: "viewer 创建" });
+      expect(statusCode).toBe(403);
+    });
+
+    it("viewer cannot update meetings", async () => {
+      const now = new Date();
+      const res = await app.inject({
+        method: "PUT",
+        url: `/api/meetings/${meetingId}`,
+        headers: { authorization: `Bearer ${viewerToken}` },
+        payload: {
+          title: "viewer 更新",
+          type: "weekly",
+          priority: "medium",
+          channel: "zoom",
+          host: "张三",
+          owner: "张三",
+          description: "viewer 尝试更新会议",
+          meetingGoal: "验证 viewer 无编辑权限",
+          location: "",
+          meetingLink: "",
+          startAt: new Date(now.getTime() + 3600000).toISOString(),
+          endAt: new Date(now.getTime() + 7200000).toISOString(),
+          isRecurring: false,
+          recurrence: "",
+          participants: [{ name: "张三", role: "host", status: "accepted" }],
+          agendaItems: [],
+          actionItems: [],
+          tags: [],
+          status: "scheduled",
+          notes: "",
+          minutes: "",
+          notifications: { inviteSent: false, reminderSent: false, changeNotified: false },
+        },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("non-owner editor can update team meetings", async () => {
+      const now = new Date();
+      const res = await app.inject({
+        method: "PUT",
+        url: `/api/meetings/${meetingId}`,
+        headers: { authorization: `Bearer ${otherEditorToken}` },
+        payload: {
+          title: "其他编辑协作更新",
+          type: "weekly",
+          priority: "medium",
+          channel: "zoom",
+          host: "张三",
+          owner: "张三",
+          description: "团队编辑可维护任意会议",
+          meetingGoal: "验证 editor 团队协作者模型",
+          location: "",
+          meetingLink: "",
+          startAt: new Date(now.getTime() + 3600000).toISOString(),
+          endAt: new Date(now.getTime() + 7200000).toISOString(),
+          isRecurring: false,
+          recurrence: "",
+          participants: [{ name: "张三", role: "host", status: "accepted" }],
+          agendaItems: [],
+          actionItems: [],
+          tags: [],
+          status: "scheduled",
+          notes: "",
+          minutes: "",
+          notifications: { inviteSent: false, reminderSent: false, changeNotified: false },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("non-owner editor can delete team meetings", async () => {
+      const { meeting: disposable } = await createTestMeeting(app, ownerToken, { title: "待协作删除" });
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/api/meetings/${disposable.id}`,
+        headers: { authorization: `Bearer ${otherEditorToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("viewer cannot delete meetings", async () => {
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/api/meetings/${meetingId}`,
+        headers: { authorization: `Bearer ${viewerToken}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
   });
 });

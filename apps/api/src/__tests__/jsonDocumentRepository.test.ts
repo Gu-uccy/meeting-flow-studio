@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { meetingRecordSchema, seedMeetings } from "@meeting-flow/shared";
-import { withDatabase } from "../lib/db/index.js";
+import { withDatabase, resetDatabaseClients } from "../lib/db/index.js";
 import { createJsonDocumentRepository } from "../repositories/jsonDocumentRepository.js";
 
 describe("jsonDocumentRepository", () => {
@@ -17,6 +17,8 @@ describe("jsonDocumentRepository", () => {
   });
 
   afterEach(() => {
+    resetDatabaseClients();
+
     if (previousSqlitePath) {
       process.env.SQLITE_PATH = previousSqlitePath;
     } else {
