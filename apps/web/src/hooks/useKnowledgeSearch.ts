@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 export type KnowledgeSearchHit = {
   content: string;
@@ -44,7 +44,7 @@ export function useKnowledgeSearch(meetingId: string, isEnabled = true) {
         limit: "6"
       });
       const response = await apiClient(`/api/knowledge/search?${searchParams.toString()}`);
-      const data = (await response.json()) as Partial<KnowledgeSearchResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<KnowledgeSearchResponse> & { message?: string };
 
       if (!response.ok || !Array.isArray(data.items)) {
         throw new Error(data.message ?? "向量检索失败，请稍后重试。");

@@ -1,6 +1,6 @@
 import type { MeetingMemory, MeetingRecord } from "@meeting-flow/shared";
 import { loadMeetingMemories } from "../memoryStore.js";
-import { getEmbeddingProvider } from "./embeddings.js";
+import { getEmbeddingProvider, type EmbeddingRuntime, isEmbeddingAvailable } from "./embeddings.js";
 import { searchVectorKnowledge } from "../vectorStore.js";
 
 export type KnowledgeRetrievalOptions = {
@@ -8,6 +8,7 @@ export type KnowledgeRetrievalOptions = {
   missingPolicy?: string;
   query?: string;
   sources?: string;
+  runtime?: EmbeddingRuntime;
 };
 
 export type KnowledgeRetrievalResult = {
@@ -57,7 +58,7 @@ function buildRetrievalQuery(meeting: MeetingRecord, explicitQuery?: string) {
 }
 
 function retrievalModeFromProvider(provider: string): KnowledgeRetrievalResult["retrievalMode"] {
-  return provider.startsWith("openai:") ? "vector-openai" : "vector-local";
+  return provider.includes("openai") ? "vector-openai" : "vector-local";
 }
 
 export function normalizeKnowledgeSources(sources?: string) {
@@ -134,12 +135,18 @@ export async function retrieveMeetingKnowledge(
   const sources = normalizeKnowledgeSources(options.sources);
   const missingPolicy = options.missingPolicy?.trim() || "continue";
   const query = buildRetrievalQuery(meeting, options.query);
-  const embeddingModel = getEmbeddingProvider();
+  const canUseVector = Boolean(options.runtime?.apiKey) || isEmbeddingAvailable();
 
+  if (!canUseVector) {
+    return retrieveWithMemoryStore(meeting, { maxDocs, missingPolicy, sources });
+  }
+
+  const embeddingModel = getEmbeddingProvider(options.runtime);
   const vectorHits = await searchVectorKnowledge({
     meetingId: meeting.id,
     query,
-    topK: maxDocs
+    topK: maxDocs,
+    runtime: options.runtime
   });
 
   if (vectorHits.length > 0) {

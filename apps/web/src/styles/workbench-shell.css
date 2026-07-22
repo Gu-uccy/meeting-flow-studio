@@ -1,0 +1,677 @@
+.retool-shell {
+  color: #111827;
+  margin: 0 auto;
+  min-height: 100vh;
+  max-width: 1480px;
+  padding: 18px 28px 64px;
+}
+
+.marketing-nav {
+  align-items: center;
+  background: rgba(247, 248, 250, 0.92);
+  border-bottom: 1px solid #e5e7eb;
+  backdrop-filter: blur(18px);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr auto 1fr;
+  min-height: 58px;
+  padding: 0 4px;
+  position: sticky;
+  top: 0;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  z-index: 20;
+}
+
+.marketing-nav__brand, .marketing-nav nav, .marketing-nav nav a, .nav-cta {
+  align-items: center;
+  display: inline-flex;
+}
+
+.brand-mark {
+  --brand-size: 30px;
+  align-items: center;
+  background: radial-gradient(circle at 30% 22%, #67e8f9 0 12%, transparent 13%),
+
+    linear-gradient(145deg, #0f172a 0%, #14354c 58%, #8fc0c5 100%);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 10px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+  display: inline-grid;
+  flex: 0 0 auto;
+  height: var(--brand-size);
+  justify-content: center;
+  overflow: hidden;
+  width: var(--brand-size);
+}
+
+.brand-mark--compact {
+  --brand-size: 26px;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.brand-mark svg {
+  height: 100%;
+  width: 100%;
+}
+
+.brand-mark__rail, .brand-mark__letter {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.brand-mark__rail {
+  opacity: 0.92;
+  stroke: #67e8f9;
+  stroke-width: 2.4;
+}
+
+.brand-mark__letter {
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.brand-mark__dot {
+  stroke: rgba(255, 255, 255, 0.86);
+  stroke-width: 1.4;
+}
+
+.brand-mark__dot--start {
+  fill: var(--flow-accent);
+}
+
+.brand-mark__dot--mid {
+  fill: var(--flow-accent);
+}
+
+.brand-mark__dot--end {
+  fill: #f59e0b;
+}
+
+.marketing-nav__brand {
+  color: #111827;
+  gap: 10px;
+  font-weight: 700;
+  min-height: 38px;
+  position: relative;
+  text-decoration: none;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.marketing-nav__brand .brand-mark {
+  transition: border-radius 180ms ease, transform 180ms ease;
+}
+
+.marketing-nav__brand:hover {
+  color: #16364e;
+  transform: translateY(-1px);
+}
+
+.marketing-nav__brand:hover .brand-mark {
+  border-radius: 12px;
+  transform: rotate(8deg) scale(1.04);
+}
+
+.marketing-nav nav {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 999px;
+  gap: 24px;
+  justify-content: center;
+  padding: 4px;
+}
+
+.marketing-nav nav a {
+  border-radius: 999px;
+  color: #4b5563;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-height: 34px;
+  padding: 0 12px;
+  position: relative;
+  text-decoration: none;
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.marketing-nav nav a::after {
+  background: #111827;
+  border-radius: 999px;
+  bottom: 1px;
+  content: "";
+  height: 2px;
+  left: 16px;
+  opacity: 0;
+  position: absolute;
+  right: 16px;
+  transform: scaleX(0.42);
+  transform-origin: center;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.marketing-nav nav a:hover {
+  color: #111827;
+  transform: translateY(-1px);
+}
+
+.marketing-nav nav a:hover::after {
+  opacity: 0.55;
+  transform: scaleX(1);
+}
+
+.marketing-nav nav a.is-active {
+  background: #111827;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
+.marketing-nav nav a.is-active::after {
+  opacity: 0;
+}
+
+.nav-cta {
+  background: #111827;
+  border-radius: 7px;
+  color: #ffffff;
+  font-weight: 700;
+  justify-self: end;
+  min-height: 36px;
+  padding: 0 13px;
+  transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.nav-cta:hover {
+  background: #16364e;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+  transform: translateY(-1px);
+}
+
+.retool-shell .primary-button, .retool-shell .ghost-button {
+  align-items: center;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 700;
+  justify-content: center;
+  line-height: 1;
+  min-height: 42px;
+  padding: 0 16px;
+}
+
+.retool-shell .primary-button {
+  background: #111827;
+  border: 1px solid #111827;
+  color: #ffffff;
+}
+
+.retool-shell .ghost-button {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #111827;
+}
+
+.public-product-shell .marketing-nav {
+  margin-bottom: 10px;
+}
+
+.public-product-shell .nav-cta {
+  border: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 1280px) {
+  .retool-shell .retool-hero {
+    grid-template-columns: minmax(300px, 0.32fr) minmax(0, 1fr);
+  }
+
+  .retool-shell .product-preview__body {
+    grid-template-columns: minmax(0, 1fr) 190px;
+    min-height: 390px;
+  }
+
+  .retool-shell .product-preview__canvas {
+    min-height: 390px;
+  }
+
+  .retool-shell .product-preview__stage {
+    transform: scale(0.74);
+  }
+
+  .retool-shell .product-preview__snapshot {
+    padding: 10px;
+    border-left: 1px solid #e5e7eb;
+    border-top: 0;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .retool-shell {
+    padding: 12px 14px 48px;
+  }
+
+  .marketing-nav {
+    grid-template-columns: 1fr;
+    padding: 10px 0;
+    position: static;
+  }
+
+  .marketing-nav nav, .nav-cta {
+    justify-self: start;
+  }
+
+  .retool-hero {
+    padding-top: 42px;
+  }
+
+  .retool-hero h1 {
+    font-size: clamp(3rem, 16vw, 4.2rem);
+  }
+
+  .product-preview__topbar, .product-preview__logs {
+    grid-template-columns: 1fr;
+  }
+
+  .product-preview__summary {
+    justify-content: flex-start;
+  }
+
+  .product-preview__canvas {
+    min-height: 620px;
+  }
+
+  .product-preview__node {
+    width: 190px;
+  }
+
+  .how-step {
+    border-left: 0;
+    border-top: 1px solid #e5e7eb;
+    padding: 18px 0 0;
+  }
+
+}
+
+.retool-shell .marketing-nav {
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.retool-shell .retool-hero {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  display: grid;
+  gap: 52px;
+  grid-template-columns: minmax(360px, 0.38fr) minmax(780px, 1fr);
+  min-height: calc(100vh - 176px);
+  overflow: visible;
+  padding: 54px 0 34px;
+}
+
+.retool-shell .retool-hero::before, .retool-shell .retool-hero::after {
+  display: none;
+}
+
+.retool-shell .retool-hero__copy {
+  max-width: none;
+}
+
+.retool-shell .retool-hero__copy h1 {
+  max-width: 9.2ch;
+}
+
+.retool-shell .product-preview {
+  border-radius: 10px;
+}
+
+.retool-shell .panel-card, .retool-shell .meeting-card {
+  box-shadow: none;
+}
+
+.retool-shell .workflow-shell.workflow-shell--console.ide-workflow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-rows: none;
+  height: 100%;
+  min-height: 0;
+}
+
+.retool-shell .workflow-canvas.ide-canvas {
+  min-height: 0;
+}
+
+.retool-shell .workflow-canvas.ide-canvas .react-flow__renderer {
+  cursor: default;
+}
+
+.retool-shell .meeting-queue.panel-card {
+  border-radius: 0;
+  height: 100%;
+}
+
+.retool-shell .meeting-card {
+  border-radius: 7px;
+}
+
+.retool-shell .ide-inspector {
+  border-radius: 0;
+}
+
+.retool-shell .status-badge, .retool-shell .priority-badge, .retool-shell .tag-row span, .retool-shell .filter-chip, .retool-shell .dropdown__trigger, .retool-shell input, .retool-shell textarea, .retool-shell select {
+  border-radius: var(--field-radius);
+}
+
+@media (max-width: 1280px) {
+  .retool-shell .workflow-shell.workflow-shell--console.ide-workflow {
+    grid-template-columns: 1fr;
+    min-height: 1000px;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .retool-shell {
+    padding: 12px 14px 48px;
+  }
+
+  .retool-shell .marketing-nav {
+    grid-template-columns: 1fr;
+    padding: 10px 0;
+    position: static;
+  }
+
+  .retool-shell .marketing-nav nav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .retool-shell .marketing-nav nav, .retool-shell .nav-cta {
+    justify-self: start;
+  }
+
+  .retool-shell .retool-hero {
+    padding: 42px 0 34px;
+  }
+
+  .retool-shell .retool-hero__copy h1 {
+    max-width: 11ch;
+  }
+
+}
+
+@media (max-width: 980px) {
+  .retool-shell .retool-hero, .retool-shell .product-preview__body {
+    grid-template-columns: 1fr;
+  }
+
+  .retool-shell .product-preview__snapshot {
+    border-bottom: 1px solid #e5e7eb;
+    border-right: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-left: 0;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .retool-shell .product-preview__stage {
+    transform: scale(0.86);
+  }
+
+}
+
+.workbench-shell {
+  max-width: none;
+  padding: 0;
+  background: linear-gradient(180deg, #f7faf9 0%, #eef4f5 42%, #f6f8fa 100%);
+}
+
+.workbench-nav .nav-cta {
+  justify-self: end;
+}
+
+@media (max-width: 860px) {
+  .workbench-nav {
+    grid-template-columns: 1fr;
+    padding: 12px 14px;
+    position: static;
+  }
+
+  .workbench-nav nav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .workbench-nav .nav-cta {
+    justify-self: start;
+  }
+
+  .workbench-main {
+    padding: 12px;
+  }
+
+}
+
+.nav-actions {
+  align-items: center;
+  display: flex;
+  justify-self: end;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  gap: 8px;
+  padding: 4px;
+}
+
+.nav-logout {
+  font-size: 0.78rem;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.nav-account, .nav-logout {
+  background: transparent;
+  border: 0;
+  color: #111827;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 0;
+}
+
+.nav-account {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-account:hover, .nav-account.is-active, .nav-logout:hover {
+  color: #8fc0c5;
+}
+
+.nav-divider {
+  color: #cbd5e1;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.nav-view-switch {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d8dee7;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  justify-self: center;
+  max-width: min(100%, 760px);
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: thin;
+}
+
+.nav-view-switch__button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: #475569;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  min-height: 34px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.nav-view-switch__button:hover {
+  color: #111827;
+}
+
+.nav-view-switch__button.is-active {
+  background: #111827;
+  color: #ffffff;
+}
+
+@media (max-width: 860px) {
+  .workbench-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .nav-actions {
+    justify-self: start;
+  }
+
+  .workbench-main {
+    padding: 14px;
+  }
+
+}
+
+.retool-shell.public-product-shell .public-hero {
+  gap: clamp(76px, 7vw, 116px);
+  grid-template-columns: minmax(360px, 0.34fr) minmax(740px, 1fr);
+}
+
+.workbench-shell .nav-actions {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: 8px;
+  padding: 0;
+}
+
+.workbench-shell .nav-account, .workbench-shell .nav-logout {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #111827;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 0;
+}
+
+.workbench-shell .nav-account {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-shell .nav-account:hover, .workbench-shell .nav-account.is-active, .workbench-shell .nav-logout:hover {
+  color: #8fc0c5;
+}
+
+.workbench-shell .nav-divider {
+  color: #cbd5e1;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.workbench-shell .primary-button, .workbench-shell .ghost-button, .workbench-shell .danger-button, .workbench-shell .filter-chip, .workbench-shell .command-search {
+  border-radius: var(--field-radius);
+}
+
+.workbench-shell .primary-button, .workbench-shell .ghost-button, .workbench-shell .danger-button {
+  transition: background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.workbench-shell .primary-button {
+  background: #111827;
+  border-color: #111827;
+  box-shadow: 0 10px 22px rgba(17, 24, 39, 0.12);
+}
+
+.workbench-shell .primary-button:hover:not(:disabled) {
+  background: #0f172a;
+  border-color: #0f172a;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.16);
+  transform: translateY(-1px);
+}
+
+.workbench-shell .ghost-button {
+  background: #ffffff;
+  border-color: #d7e2e5;
+  color: #142331;
+}
+
+.workbench-shell .ghost-button:hover:not(:disabled), .workbench-shell .ghost-button.is-active {
+  background: #f3faf9;
+  border-color: #8fc0c5;
+  color: #14313a;
+  box-shadow: 0 8px 18px rgba(49, 93, 101, 0.08);
+}
+
+.workbench-shell .danger-button {
+  background: #fff4f1;
+  border-color: #f1c8bf;
+  color: #a14535;
+}
+
+.workbench-shell .danger-button:hover:not(:disabled) {
+  background: #ffe9e4;
+  border-color: #e3a899;
+}
+
+.retool-shell.workbench-shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  max-width: none;
+  min-height: 100vh;
+  padding: 12px 20px 16px;
+  width: 100%;
+}
+
+.retool-shell.workbench-shell.workbench-shell--workspace {
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.retool-shell.workbench-shell > .workbench-nav {
+  flex: 0 0 auto;
+}
+
+.retool-shell.workbench-shell > .workbench-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}

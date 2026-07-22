@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo } from "react";
 import type { ProductWorkflowRun } from "@meeting-flow/shared";
+import { useAuth } from "../../contexts/AuthContext";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
+import { canFilterRunsByOwnership, getProductRole } from "./layout/navAccess";
 import { StatusBanner } from "../common/StatusBanner";
 import { Dropdown } from "../common/Dropdown";
 import { RunDetailDialog } from "../workflow/RunDetailDialog";
@@ -17,29 +19,35 @@ import {
   buildRunsConsoleStats,
   filterRunsConsole,
   getBlockedNodeRun,
-  resolveRunContext,
-  type RunsConsoleFilters
+  resolveRunContext
 } from "../../lib/runsConsoleUtils";
+import { useRunsConsoleStore } from "../../stores/runsConsoleStore";
+import { SelectableCardList } from "../common/SelectableCardList";
+import { PageShell } from "./layout/PageShell";
+import { ModelRuntimeBadge } from "./layout/ModelRuntimeBadge";
 
 export function RunsConsolePage() {
+  const { user } = useAuth();
   const {
     meetings,
     workflow,
-    setWorkbenchView,
     runsConsolePreset,
     clearRunsConsolePreset,
-    focusRunInCanvas
+    focusRunInCanvas,
+    derived
   } = useWorkbench();
 
-  const [filters, setFilters] = useState<RunsConsoleFilters>(() => ({
-    status: runsConsolePreset?.status ?? "all",
-    templateId: runsConsolePreset?.templateId ?? "",
-    meetingId: runsConsolePreset?.meetingId ?? "",
-    search: runsConsolePreset?.search ?? ""
-  }));
-  const [selectedRunId, setSelectedRunId] = useState<string>("");
-  const [resolutionNote, setResolutionNote] = useState("");
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const canFilterByOwnership = user ? canFilterRunsByOwnership(getProductRole(user)) : false;
+
+  const filters = useRunsConsoleStore((state) => state.filters);
+  const isDetailOpen = useRunsConsoleStore((state) => state.isDetailOpen);
+  const resolutionNote = useRunsConsoleStore((state) => state.resolutionNote);
+  const selectedRunId = useRunsConsoleStore((state) => state.selectedRunId);
+  const setDetailOpen = useRunsConsoleStore((state) => state.setDetailOpen);
+  const setFilters = useRunsConsoleStore((state) => state.setFilters);
+  const setResolutionNote = useRunsConsoleStore((state) => state.setResolutionNote);
+  const setSelectedRunId = useRunsConsoleStore((state) => state.setSelectedRunId);
+  const updateFilters = useRunsConsoleStore((state) => state.updateFilters);
 
   useEffect(() => {
     if (!runsConsolePreset) {
@@ -50,14 +58,18 @@ export function RunsConsolePage() {
       status: runsConsolePreset.status ?? "all",
       templateId: runsConsolePreset.templateId ?? "",
       meetingId: runsConsolePreset.meetingId ?? "",
+      ownerScope: "all",
       search: runsConsolePreset.search ?? ""
     });
-  }, [runsConsolePreset]);
+  }, [runsConsolePreset, setFilters]);
 
   const stats = useMemo(() => buildRunsConsoleStats(workflow.runs), [workflow.runs]);
   const filteredRuns = useMemo(
-    () => filterRunsConsole(workflow.runs, filters),
-    [filters, workflow.runs]
+    () => filterRunsConsole(workflow.runs, filters, {
+      meetings: meetings.allMeetings,
+      ownerUserId: canFilterByOwnership && filters.ownerScope === "mine" ? user?.id : undefined
+    }),
+    [canFilterByOwnership, filters, meetings.allMeetings, user?.id, workflow.runs]
   );
 
   const selectedRun = filteredRuns.find((run) => run.id === selectedRunId)
@@ -94,14 +106,13 @@ export function RunsConsolePage() {
     [meetings.allMeetings]
   );
 
-  function updateFilters(patch: Partial<RunsConsoleFilters>) {
+  function handleFilterChange(patch: Parameters<typeof updateFilters>[0]) {
     clearRunsConsolePreset();
-    setFilters((current) => ({ ...current, ...patch }));
+    updateFilters(patch);
   }
 
   function handleSelectRun(run: ProductWorkflowRun) {
     setSelectedRunId(run.id);
-    setResolutionNote("");
   }
 
   async function handleAdvance() {
@@ -109,31 +120,21 @@ export function RunsConsolePage() {
     const run = await workflow.advanceRunAndReloadMemories(selectedRun.id, resolutionNote.trim());
     if (run) {
       setSelectedRunId(run.id);
-      setResolutionNote("");
     }
   }
 
   return (
-    <section className="runs-console-page" aria-labelledby="runs-console-title">
-      <div className="runs-console-page__header">
-        <div>
-          <span className="section-kicker">Run Console</span>
-          <h1 id="runs-console-title">全局运行控制台</h1>
-          <p>跨会议、跨模板查看流程运行状态，处理阻塞与失败任务。</p>
-        </div>
-        <div className="runs-console-page__header-actions">
-          <button
-            className="ghost-button"
-            disabled={workflow.isLoading}
-            onClick={() => void workflow.reloadWorkflowLibrary()}
-            type="button"
-          >
-            刷新
-          </button>
-          <button className="ghost-button" onClick={() => setWorkbenchView("workspace")} type="button">
-            返回流程画布
-          </button>
-        </div>
+    <PageShell className="runs-console-page runs-console-page--observability" id="runs-console">
+      <div className="runs-console__runtime"><ModelRuntimeBadge label={derived.modelRuntimeLabel} /></div>
+      <div className="runs-console-page__toolbar">
+        <button
+          className="ghost-button"
+          disabled={workflow.isLoading}
+          onClick={() => void workflow.reloadWorkflowLibrary()}
+          type="button"
+        >
+          刷新
+        </button>
       </div>
 
       <StatusBanner error={workflow.error} feedback={workflow.feedback} />
@@ -152,17 +153,35 @@ export function RunsConsolePage() {
             <button
               className={`filter-chip${filters.status === option.value ? " is-active" : ""}`}
               key={option.value}
-              onClick={() => updateFilters({ status: option.value })}
+              onClick={() => handleFilterChange({ status: option.value })}
               type="button"
             >
               {option.label}
             </button>
           ))}
         </div>
+        {canFilterByOwnership ? (
+          <div className="runs-console-page__filter-chips">
+            <button
+              className={`filter-chip${filters.ownerScope === "all" ? " is-active" : ""}`}
+              onClick={() => handleFilterChange({ ownerScope: "all" })}
+              type="button"
+            >
+              全部会议
+            </button>
+            <button
+              className={`filter-chip${filters.ownerScope === "mine" ? " is-active" : ""}`}
+              onClick={() => handleFilterChange({ ownerScope: "mine" })}
+              type="button"
+            >
+              我创建的
+            </button>
+          </div>
+        ) : null}
         <label>
           <span>模板</span>
           <Dropdown
-            onChange={(value) => updateFilters({ templateId: value })}
+            onChange={(value) => handleFilterChange({ templateId: value })}
             options={templateFilterOptions}
             value={filters.templateId}
           />
@@ -170,7 +189,7 @@ export function RunsConsolePage() {
         <label>
           <span>会议</span>
           <Dropdown
-            onChange={(value) => updateFilters({ meetingId: value })}
+            onChange={(value) => handleFilterChange({ meetingId: value })}
             options={meetingFilterOptions}
             value={filters.meetingId}
           />
@@ -178,7 +197,7 @@ export function RunsConsolePage() {
         <label className="runs-console-page__search">
           <span>搜索</span>
           <input
-            onChange={(event) => updateFilters({ search: event.target.value })}
+            onChange={(event) => handleFilterChange({ search: event.target.value })}
             placeholder="运行名称或 ID"
             type="search"
             value={filters.search}
@@ -186,56 +205,38 @@ export function RunsConsolePage() {
         </label>
       </div>
 
-      <div className="runs-console-page__body">
-        <section className="runs-console-page__table-panel" aria-label="运行列表">
-          {filteredRuns.length > 0 ? (
-            <table className="runs-console-table">
-              <thead>
-                <tr>
-                  <th>状态</th>
-                  <th>运行</th>
-                  <th>模板</th>
-                  <th>会议</th>
-                  <th>开始</th>
-                  <th>耗时</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRuns.map((run) => {
-                  const context = resolveRunContext(run, workflow.templates, meetings.allMeetings);
-                  return (
-                    <tr
-                      className={run.id === selectedRun?.id ? "is-active" : ""}
-                      key={run.id}
-                      onClick={() => handleSelectRun(run)}
-                    >
-                      <td>
-                        <span className={`run-status ${statusClass(run.status)}`}>
-                          {runStatusLabels[run.status]}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>{run.name}</strong>
-                        <small>{run.id}</small>
-                      </td>
-                      <td>{context.template?.name ?? run.templateId}</td>
-                      <td>{context.meeting?.title ?? run.meetingId}</td>
-                      <td>{formatRunTimestamp(run.startedAt)}</td>
-                      <td>{run.durationSeconds}s</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          ) : (
-            <div className="run-empty">当前筛选条件下没有运行记录。</div>
-          )}
+      <div className="runs-console-page__observability">
+        <section className="runs-console-page__runs" aria-label="运行列表">
+          <SelectableCardList
+            ariaLabel="运行记录"
+            empty={<div className="run-empty">当前筛选条件下没有运行记录。</div>}
+            items={filteredRuns.map((run) => {
+              const context = resolveRunContext(run, workflow.templates, meetings.allMeetings);
+              return {
+                id: run.id,
+                title: run.name,
+                badge: runStatusLabels[run.status],
+                badgeClassName: `run-status ${statusClass(run.status)}`,
+                description: context.template?.name ?? run.templateId,
+                meta: `${context.meeting?.title ?? run.meetingId} · ${formatRunTimestamp(run.startedAt)} · ${run.durationSeconds}s`,
+                className: "selectable-card--badge-leading"
+              };
+            })}
+            layout="stack"
+            onSelect={(id) => {
+              const run = filteredRuns.find((item) => item.id === id);
+              if (run) {
+                handleSelectRun(run);
+              }
+            }}
+            selectedId={selectedRun?.id ?? null}
+          />
         </section>
 
-        <aside className="runs-console-page__detail" aria-label="运行详情">
+        <section className={`runs-console-page__trace${selectedRun ? " is-open" : ""}`} aria-label="运行追踪">
           {selectedRun && selectedContext.template ? (
             <>
-              <div className="runs-console-page__detail-head">
+              <div className="runs-console-page__trace-head">
                 <div>
                   <span className={`run-status ${statusClass(selectedRun.status)}`}>
                     {runStatusLabels[selectedRun.status]}
@@ -247,13 +248,9 @@ export function RunsConsolePage() {
                     {selectedContext.meeting?.title ?? selectedRun.meetingId}
                   </p>
                 </div>
-              </div>
-
-              <div className="runs-console-page__detail-meta">
-                <article><span>开始</span><strong>{formatRunTimestamp(selectedRun.startedAt)}</strong></article>
-                <article><span>结束</span><strong>{formatRunTimestamp(selectedRun.endedAt)}</strong></article>
-                <article><span>耗时</span><strong>{selectedRun.durationSeconds}s</strong></article>
-                <article><span>节点</span><strong>{selectedRun.nodeRuns.length}</strong></article>
+                <button className="ghost-button" onClick={() => setDetailOpen(true)} type="button">
+                  详情
+                </button>
               </div>
 
               <RunLatencyWaterfall
@@ -269,30 +266,23 @@ export function RunsConsolePage() {
                     <article className={`run-timeline__item run-timeline__item--${nodeRun.status}`} key={nodeRun.nodeId}>
                       <span>{nodeRunLabels[nodeRun.status]}</span>
                       <strong>{node?.title ?? nodeRun.nodeId}</strong>
-                      {nodeRun.errorMessage && <em>{nodeRun.errorMessage}</em>}
+                      {nodeRun.errorMessage ? <em>{nodeRun.errorMessage}</em> : null}
                     </article>
                   );
                 })}
               </div>
 
-              {blockedNodeRun && (
+              {blockedNodeRun ? (
                 <textarea
                   aria-label="阻塞处理说明"
-                  className="workflow-side-panel__note"
+                  className="runs-console-page__note"
                   onChange={(event) => setResolutionNote(event.target.value)}
                   placeholder="记录阻塞处理说明后继续流程"
                   value={resolutionNote}
                 />
-              )}
+              ) : null}
 
               <div className="runs-console-page__actions">
-                <button
-                  className="ghost-button"
-                  onClick={() => setIsDetailOpen(true)}
-                  type="button"
-                >
-                  查看详情
-                </button>
                 <button
                   className="ghost-button"
                   onClick={() => focusRunInCanvas(selectedRun)}
@@ -300,7 +290,7 @@ export function RunsConsolePage() {
                 >
                   在画布中打开
                 </button>
-                {blockedNodeRun && (
+                {blockedNodeRun ? (
                   <button
                     className="primary-button"
                     disabled={isBusy || !resolutionNote.trim()}
@@ -309,8 +299,8 @@ export function RunsConsolePage() {
                   >
                     继续运行
                   </button>
-                )}
-                {selectedRun.status === "failed" && (
+                ) : null}
+                {selectedRun.status === "failed" ? (
                   <button
                     className="primary-button"
                     disabled={isBusy}
@@ -321,8 +311,8 @@ export function RunsConsolePage() {
                   >
                     断点重试
                   </button>
-                )}
-                {selectedRun.status === "running" && (
+                ) : null}
+                {selectedRun.status === "running" ? (
                   <button
                     className="ghost-button"
                     disabled={isBusy}
@@ -331,23 +321,23 @@ export function RunsConsolePage() {
                   >
                     取消运行
                   </button>
-                )}
+                ) : null}
               </div>
             </>
           ) : (
-            <div className="run-empty">选择一条运行记录查看详情与操作。</div>
+            <div className="run-empty">选择一条运行记录查看追踪时间线。</div>
           )}
-        </aside>
+        </section>
       </div>
 
-      {isDetailOpen && selectedRun && selectedContext.template && (
+      {isDetailOpen && selectedRun && selectedContext.template ? (
         <RunDetailDialog
           meeting={selectedContext.meeting}
-          onClose={() => setIsDetailOpen(false)}
+          onClose={() => setDetailOpen(false)}
           run={selectedRun}
           template={selectedContext.template}
         />
-      )}
-    </section>
+      ) : null}
+    </PageShell>
   );
 }

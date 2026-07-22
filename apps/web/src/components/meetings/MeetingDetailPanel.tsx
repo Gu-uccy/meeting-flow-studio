@@ -21,8 +21,9 @@ import {
   type UpdateMeetingInput
 } from "@meeting-flow/shared";
 import { durationLabel, formatDateRange } from "../../lib/format";
-import { ConfirmDialog } from "../common/Modal";
+import { ConfirmDialog } from "../common/PromptDialogs";
 import { Dropdown } from "../common/Dropdown";
+import { SelectableCardList } from "../common/SelectableCardList";
 
 type MeetingDetailPanelProps = {
   isMutating: boolean;
@@ -84,7 +85,7 @@ export function MeetingDetailPanel({
         <div className="section-head">
           <span>会议</span>
           <strong>请选择一场会议</strong>
-          <p>从列表中选择一场会议后，可查看详情并继续维护。</p>
+          <p>从顶栏或会议页选择一场会议后，可查看详情并继续维护。</p>
         </div>
         <div className="empty-state">当前没有选中的会议</div>
       </aside>
@@ -495,10 +496,10 @@ export function MeetingDetailPanel({
           )}
         </div>
         <div className="agenda-list">
-          {visibleAgendaItems.map((item, index) => (
-            <div key={`${item.title}-${index}`} className="agenda-item">
-              {isEditing ? (
-                <>
+          {isEditing ? (
+            <>
+              {visibleAgendaItems.map((item, index) => (
+                <div key={`${item.title}-${index}`} className="agenda-item">
                   <input value={item.title} onChange={(event) => updateAgenda(index, "title", event.target.value)} />
                   <label className="inline-check">
                     <input
@@ -528,9 +529,19 @@ export function MeetingDetailPanel({
                       删除
                     </button>
                   </div>
-                </>
-              ) : (
-                <>
+                </div>
+              ))}
+              {visibleAgendaItems.length === 0 && <div className="empty-inline">暂无议程项</div>}
+            </>
+          ) : (
+            <SelectableCardList
+              ariaLabel="议程"
+              empty={<div className="empty-inline">暂无议程项</div>}
+              items={visibleAgendaItems.map((item, index) => ({
+                id: `agenda-${index}`,
+                title: item.title,
+                className: item.completed ? "is-done" : "",
+                actions: (
                   <button
                     className={`toggle-mark${item.completed ? " is-done" : ""}`}
                     disabled={isMutating}
@@ -539,12 +550,11 @@ export function MeetingDetailPanel({
                   >
                     {item.completed ? "已讨论" : "待讨论"}
                   </button>
-                  <strong>{item.title}</strong>
-                </>
-              )}
-            </div>
-          ))}
-          {visibleAgendaItems.length === 0 && <div className="empty-inline">暂无议程项</div>}
+                )
+              }))}
+              layout="stack"
+            />
+          )}
         </div>
       </section>
 
@@ -606,15 +616,17 @@ export function MeetingDetailPanel({
             ))}
           </div>
         ) : (
-          <div className="participant-list">
-            {activeMeeting.participants.map((participant) => (
-              <article key={participant.id} className="participant-card">
-                <strong>{participant.name}</strong>
-                <span>{participantRoleLabels[participant.role]}</span>
-                <span>{participantStatusLabels[participant.status]}</span>
-              </article>
-            ))}
-          </div>
+          <SelectableCardList
+            ariaLabel="参会人"
+            empty={<div className="empty-inline">暂无参会人</div>}
+            items={activeMeeting.participants.map((participant) => ({
+              id: participant.id,
+              title: participant.name,
+              badge: participantStatusLabels[participant.status],
+              meta: participantRoleLabels[participant.role]
+            }))}
+            layout="stack"
+          />
         )}
       </section>
 
@@ -723,17 +735,18 @@ export function MeetingDetailPanel({
             {activeDraft.actionItems.length === 0 && <div className="empty-inline">暂无待办事项</div>}
           </div>
         ) : (
-          <div className="action-list">
-            {activeMeeting.actionItems.map((item) => (
-              <article key={item.id} className="action-card">
-                <strong>{item.content}</strong>
-                <span>负责人：{item.owner}</span>
-                <span>截止日期：{item.dueDate || "未设置"}</span>
-                <span>状态：{actionItemStatusLabels[item.status]}</span>
-              </article>
-            ))}
-            {activeMeeting.actionItems.length === 0 && <div className="empty-inline">暂无待办事项</div>}
-          </div>
+          <SelectableCardList
+            ariaLabel="待办"
+            empty={<div className="empty-inline">暂无待办事项</div>}
+            items={activeMeeting.actionItems.map((item) => ({
+              id: item.id,
+              title: item.content,
+              badge: actionItemStatusLabels[item.status],
+              meta: `负责人：${item.owner} · 截止日期：${item.dueDate || "未设置"}`,
+              className: "selectable-card--title-clamp"
+            }))}
+            layout="stack"
+          />
         )}
       </section>
 

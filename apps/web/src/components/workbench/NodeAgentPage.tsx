@@ -9,10 +9,15 @@ import {
   type ProductWorkflowRun,
 } from "@meeting-flow/shared";
 import { Dropdown } from "../common/Dropdown";
+import { SelectableCardList } from "../common/SelectableCardList";
 import { formatDateTime } from "../../lib/format";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
+import { useNodeAgentStore } from "../../stores/nodeAgentStore";
 import { NodeAgentDebugStudio } from "./NodeAgentDebugStudio";
 import { NodeAgentVersionDiffPanel } from "./NodeAgentVersionDiffPanel";
+import { NodeAgentListPanel } from "./nodeAgent/NodeAgentListPanel";
+import { NodeAgentStudioLayout } from "./nodeAgent/NodeAgentStudioLayout";
+import { PageShell } from "./layout/PageShell";
 
 // ── Types ──
 
@@ -77,8 +82,6 @@ function withDropdownOption(options: MappingVariableOption[], value: string): Ma
   return [{ group: "自定义", label: value, value }, ...options];
 }
 
-type NodeAgentStudioTab = "configure" | "debug" | "versions";
-
 // ── Component ──
 
 export function NodeAgentPage() {
@@ -106,11 +109,15 @@ export function NodeAgentPage() {
   const onUpdateApplicationStatus = workflow.updateApplicationStatus;
   const onNavigateToAccount = () => setWorkbenchView("account");
 
-  const [nodeAgentSearchQuery, setNodeAgentSearchQuery] = useState("");
-  const [nodeAgentRuntimeFilter, setNodeAgentRuntimeFilter] = useState<"all" | "ai" | "system">("all");
-  const [selectedNodeAgentKey, setSelectedNodeAgentKey] = useState("");
-  const [activeStudioTab, setActiveStudioTab] = useState<NodeAgentStudioTab>("configure");
   const [isPromptRunning, setIsPromptRunning] = useState(false);
+  const activeStudioTab = useNodeAgentStore((state) => state.activeStudioTab);
+  const nodeAgentRuntimeFilter = useNodeAgentStore((state) => state.nodeAgentRuntimeFilter);
+  const nodeAgentSearchQuery = useNodeAgentStore((state) => state.nodeAgentSearchQuery);
+  const selectedNodeAgentKey = useNodeAgentStore((state) => state.selectedNodeAgentKey);
+  const setActiveStudioTab = useNodeAgentStore((state) => state.setActiveStudioTab);
+  const setNodeAgentRuntimeFilter = useNodeAgentStore((state) => state.setNodeAgentRuntimeFilter);
+  const setNodeAgentSearchQuery = useNodeAgentStore((state) => state.setNodeAgentSearchQuery);
+  const setSelectedNodeAgentKey = useNodeAgentStore((state) => state.setSelectedNodeAgentKey);
   const [nodeAgentMappingDrafts, setNodeAgentMappingDrafts] = useState<Record<string, NodeAgentMappingDraft>>({});
   const [nodeAgentSchemaDrafts, setNodeAgentSchemaDrafts] = useState<Record<string, NodeAgentSchemaDraft>>({});
   const [nodeAgentPromptDrafts, setNodeAgentPromptDrafts] = useState<Record<string, NodeAgentPromptDraft>>({});
@@ -141,7 +148,7 @@ export function NodeAgentPage() {
     setSelectedNodeAgentKey(pendingNodeAgentKey);
     setActiveStudioTab("debug");
     clearPendingNodeAgent();
-  }, [clearPendingNodeAgent, pendingNodeAgentKey]);
+  }, [clearPendingNodeAgent, pendingNodeAgentKey, setActiveStudioTab, setSelectedNodeAgentKey]);
   const selectedApp = selectedBinding?.application ?? null;
   const selectedNode = selectedBinding?.node ?? null;
   const selectedTemplate = selectedBinding?.template ?? null;
@@ -314,66 +321,23 @@ export function NodeAgentPage() {
   }
 
   return (
-    <>
-      <section className="app-hub" aria-label="节点智能体管理">
-        <div className="app-hub__header">
-          <div>
-            <h2>节点智能体管理</h2>
-          </div>
-          <div className="app-hub__header-actions">
-            <button className="ghost-button" onClick={() => setWorkbenchView("workspace")} type="button">返回流程画布</button>
-            <button className="ghost-button" onClick={onNavigateToAccount} type="button">配置模型</button>
-          </div>
-        </div>
-
-        <div className="node-agent-studio-tabs" aria-label="智能体工作室视图" role="tablist">
-          {([
-            ["configure", "编排配置"],
-            ["debug", "调试 Playground"],
-            ["versions", "版本"]
-          ] as const).map(([id, label]) => (
-            <button
-              aria-selected={activeStudioTab === id}
-              className={`node-agent-studio-tabs__button${activeStudioTab === id ? " is-active" : ""}`}
-              key={id}
-              onClick={() => setActiveStudioTab(id)}
-              role="tab"
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="node-agent-manager" aria-label="节点智能体搜索列表">
-          <aside className="node-agent-list-panel">
-            <div className="section-title">
-              <h3>节点列表</h3>
-            </div>
-            <label className="node-agent-search">
-              <span>搜索</span>
-              <input onChange={(e) => setNodeAgentSearchQuery(e.target.value)} placeholder="搜索节点、流程或智能体" value={nodeAgentSearchQuery} />
-            </label>
-            <div className="filter-strip" aria-label="执行方式筛选">
-              {[{ label: "全部", value: "all" }, { label: "AI 执行", value: "ai" }, { label: "系统/人工", value: "system" }].map((f) => (
-                <button className={`filter-chip${nodeAgentRuntimeFilter === f.value ? " is-active" : ""}`} key={f.value} onClick={() => setNodeAgentRuntimeFilter(f.value as "all" | "ai" | "system")} type="button">{f.label}</button>
-              ))}
-            </div>
-            <div className="node-agent-list scroll-area">
-              {filteredNodeAgentBindings.map(({ application, node, template }) => {
-                const key = `${template.id}-${node.id}`;
-                const selectedKey = selectedBinding ? `${selectedBinding.template.id}-${selectedBinding.node.id}` : "";
-                return (
-                  <button className={`node-agent-row${selectedKey === key ? " is-selected" : ""}`} key={key} onClick={() => setSelectedNodeAgentKey(key)} type="button">
-                    <span>{template.name}</span><strong>{node.title}</strong>
-                    <small>{meetingNodeKindLabels[node.kind]} / {node.executor?.type === "aiApplication" ? application?.name ?? "未绑定智能体" : node.executor?.label}</small>
-                  </button>
-                );
-              })}
-              {filteredNodeAgentBindings.length === 0 && <div className="node-agent-empty">没有匹配的节点智能体</div>}
-            </div>
-          </aside>
-
+    <PageShell className="app-hub" aria-label="节点智能体管理">
+      <NodeAgentStudioLayout
+        listPanel={(
+          <NodeAgentListPanel
+            activeStudioTab={activeStudioTab}
+            filteredBindings={filteredNodeAgentBindings}
+            nodeAgentRuntimeFilter={nodeAgentRuntimeFilter}
+            nodeAgentSearchQuery={nodeAgentSearchQuery}
+            onConfigureModel={onNavigateToAccount}
+            onSelectBinding={setSelectedNodeAgentKey}
+            onSetActiveStudioTab={setActiveStudioTab}
+            onSetRuntimeFilter={setNodeAgentRuntimeFilter}
+            onSetSearchQuery={setNodeAgentSearchQuery}
+            selectedNodeAgentKey={selectedNodeAgentKey}
+          />
+        )}
+      >
           <section className="node-agent-detail" aria-label="节点智能体详情">
             {selectedBinding && selectedNode && selectedTemplate ? (
               <>
@@ -580,20 +544,29 @@ export function NodeAgentPage() {
                         </div>
                       </div>
                       <div className="node-agent-version-list">
-                        {selectedApp.versions.slice(0, 5).map((version) => (
-                          <article className="node-agent-version-row" key={version.id}>
-                            <div>
-                              <strong>{version.version}</strong>
-                              <div className="node-agent-version-row__actions">
-                                <span className={`app-status app-status--${version.status === "published" ? "published" : "draft"}`}>{version.status === "published" ? "已发布" : "快照"}</span>
-                                <button className="ghost-button" disabled={isWorkflowMutating} onClick={() => void onApplyApplicationVersion(selectedApp.id, version.id)} type="button">设为当前</button>
-                              </div>
-                            </div>
-                            <p>{version.summary}</p>
-                            <small>{version.promptConfig.model} / {version.createdBy} / {formatDateTime(version.createdAt)}</small>
-                          </article>
-                        ))}
-                        {selectedApp.versions.length === 0 && <div className="node-agent-inline-empty">暂无版本记录，可先保存快照或发布一个版本。</div>}
+                        <SelectableCardList
+                          ariaLabel="节点智能体版本"
+                          empty={<div className="node-agent-inline-empty">暂无版本记录，可先保存快照或发布一个版本。</div>}
+                          items={selectedApp.versions.slice(0, 5).map((version) => ({
+                            id: version.id,
+                            title: version.version,
+                            badge: version.status === "published" ? "已发布" : "快照",
+                            badgeClassName: `app-status app-status--${version.status === "published" ? "published" : "draft"}`,
+                            description: version.summary,
+                            meta: `${version.promptConfig.model} / ${version.createdBy} / ${formatDateTime(version.createdAt)}`,
+                            actions: (
+                              <button
+                                className="ghost-button"
+                                disabled={isWorkflowMutating}
+                                onClick={() => void onApplyApplicationVersion(selectedApp.id, version.id)}
+                                type="button"
+                              >
+                                设为当前
+                              </button>
+                            )
+                          }))}
+                          layout="stack"
+                        />
                       </div>
 
                       <NodeAgentVersionDiffPanel
@@ -609,8 +582,7 @@ export function NodeAgentPage() {
               <div className="node-agent-empty">请选择一个流程节点</div>
             )}
           </section>
-        </div>
-      </section>
-    </>
+      </NodeAgentStudioLayout>
+    </PageShell>
   );
 }

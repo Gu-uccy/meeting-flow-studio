@@ -7,13 +7,8 @@ import {
   type ProductWorkflowTemplate
 } from "@meeting-flow/shared";
 import { Dropdown } from "../common/Dropdown";
-import {
-  formatDataMapping,
-  formatList,
-  parseDataMapping,
-  parseList,
-  toneByKind
-} from "./workflowPanelUtils";
+import { WorkflowEdgeConfigPanel } from "./editor/WorkflowEdgeConfigPanel";
+import { parseList, formatList, toneByKind } from "./workflowPanelUtils";
 
 type WorkflowCanvasInspectorProps = {
   canvasNodes: ProductWorkflowNode[];
@@ -30,120 +25,75 @@ type WorkflowCanvasInspectorProps = {
   updateCanvasNode: (nodeId: string, update: (node: ProductWorkflowNode) => ProductWorkflowNode) => void;
 };
 
-export function WorkflowCanvasInspector({
-  canvasNodes,
+type WorkflowInspectorEditorProps = WorkflowCanvasInspectorProps & {
+  onDeleteSelectedNode?: () => void;
+  variant?: "sidebar" | "floating";
+};
+
+const configFieldHints: Record<string, string> = {
+  temperature: "控制 AI 输出的随机程度：越低越稳定，越高越有创意。"
+};
+
+function formatConfigFieldLabel(field: { key: string; label: string }) {
+  if (field.key === "temperature" && field.label === "温度") {
+    return "创造性";
+  }
+  return field.label;
+}
+
+export function WorkflowInspectorEditor({
   isCanvasDirty,
   isWorkflowActionBusy,
-  onDeleteSelectedEdge,
+  onDeleteSelectedNode,
   onOpenNodeAgent,
   onResetCanvas,
   onSaveCanvas,
-  selectedEdge,
   selectedNode,
   selectedTemplateId,
-  updateCanvasEdge,
-  updateCanvasNode
-}: WorkflowCanvasInspectorProps) {
+  updateCanvasNode,
+  variant = "sidebar"
+}: WorkflowInspectorEditorProps) {
+  const compact = variant === "floating";
   const canOpenNodeAgent = Boolean(
     selectedNode
       && onOpenNodeAgent
       && ["ai", "knowledge", "decision", "action"].includes(selectedNode.kind)
   );
-  return (
-    <aside className="ide-inspector" aria-label={selectedEdge ? "连线配置面板" : "节点配置面板"}>
-      <div className="ide-pane-header ide-pane-header--stacked">
-        {selectedEdge ? (
-          <>
-            <span>连线</span>
-            <strong>
-              {`${canvasNodes.find((node) => node.id === selectedEdge.source)?.title ?? selectedEdge.source} → ${
-                canvasNodes.find((node) => node.id === selectedEdge.target)?.title ?? selectedEdge.target
-              }`}
-            </strong>
-            <p>{selectedEdge.condition || selectedEdge.label || "配置这条连线的标签、条件和数据映射。"}</p>
-          </>
-        ) : (
-          <strong className="inspector-main-title">节点</strong>
-        )}
-      </div>
 
-      <div className="ide-inspector__body scroll-area">
-        {selectedEdge ? (
+  if (!selectedNode) {
+    return null;
+  }
+
+  return (
+    <div className={`ide-inspector__body scroll-area${compact ? " ide-inspector__body--compact" : ""}`}>
+      <div className="ide-form">
+        <label>
+          标题
+          <input
+            value={selectedNode.title}
+            onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, title: event.target.value }))}
+          />
+        </label>
+        {!compact && (
+          <label>
+            描述
+            <textarea
+              value={selectedNode.description}
+              onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, description: event.target.value }))}
+            />
+          </label>
+        )}
+        <label>
+          类型
+          <Dropdown<ProductWorkflowNode["kind"]>
+            ariaLabel="节点类型"
+            onChange={(value) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, kind: value }))}
+            options={meetingNodeKinds.map((kind) => ({ label: meetingNodeKindLabels[kind], value: kind }))}
+            value={selectedNode.kind}
+          />
+        </label>
+        {!compact && (
           <>
-            <div className="ide-form">
-              <label>
-                源节点
-                <input readOnly value={canvasNodes.find((node) => node.id === selectedEdge.source)?.title ?? selectedEdge.source} />
-              </label>
-              <label>
-                目标节点
-                <input readOnly value={canvasNodes.find((node) => node.id === selectedEdge.target)?.title ?? selectedEdge.target} />
-              </label>
-              <label>
-                连线标签
-                <input
-                  value={selectedEdge.label}
-                  onChange={(event) => updateCanvasEdge(selectedEdge.id, (edge) => ({ ...edge, label: event.target.value }))}
-                />
-              </label>
-              <label>
-                运行条件
-                <textarea
-                  value={selectedEdge.condition ?? ""}
-                  onChange={(event) => updateCanvasEdge(selectedEdge.id, (edge) => ({
-                    ...edge,
-                    condition: event.target.value.trim() ? event.target.value : undefined
-                  }))}
-                />
-              </label>
-              <label>
-                数据映射
-                <textarea
-                  value={formatDataMapping(selectedEdge.dataMapping)}
-                  onChange={(event) => {
-                    const dataMapping = parseDataMapping(event.target.value);
-                    updateCanvasEdge(selectedEdge.id, (edge) => ({
-                      ...edge,
-                      dataMapping: Object.keys(dataMapping).length > 0 ? dataMapping : undefined
-                    }));
-                  }}
-                />
-              </label>
-            </div>
-            <div className="ide-config-actions">
-              <button className="danger-button" disabled={isWorkflowActionBusy} onClick={onDeleteSelectedEdge} type="button">
-                删除连线
-              </button>
-              <button className="primary-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={() => void onSaveCanvas()} type="button">
-                保存画布
-              </button>
-            </div>
-          </>
-        ) : selectedNode ? (
-          <div className="ide-form">
-            <label>
-              节点标题
-              <input
-                value={selectedNode.title}
-                onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, title: event.target.value }))}
-              />
-            </label>
-            <label>
-              节点描述
-              <textarea
-                value={selectedNode.description}
-                onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, description: event.target.value }))}
-              />
-            </label>
-            <label>
-              节点类型
-              <Dropdown<ProductWorkflowNode["kind"]>
-                ariaLabel="节点类型"
-                onChange={(value) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, kind: value }))}
-                options={meetingNodeKinds.map((kind) => ({ label: meetingNodeKindLabels[kind], value: kind }))}
-                value={selectedNode.kind}
-              />
-            </label>
             <label>
               负责人
               <input
@@ -165,56 +115,103 @@ export function WorkflowCanvasInspector({
                 onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({ ...node, outputs: parseList(event.target.value) }))}
               />
             </label>
-            {selectedNode.configFields.map((field) => (
-              <label key={field.key}>
-                {field.label}
-                {field.kind === "textarea" ? (
-                  <textarea
-                    value={field.value}
-                    onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({
-                      ...node,
-                      configFields: node.configFields.map((item) =>
-                        item.key === field.key ? { ...item, value: event.target.value } : item
-                      )
-                    }))}
-                  />
-                ) : (
-                  <input
-                    value={field.value}
-                    onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({
-                      ...node,
-                      configFields: node.configFields.map((item) =>
-                        item.key === field.key ? { ...item, value: event.target.value } : item
-                      )
-                    }))}
-                  />
-                )}
-              </label>
-            ))}
-            {canOpenNodeAgent && selectedNode && (
-              <div className="ide-config-actions ide-config-actions--agent">
-                <button
-                  className="ghost-button"
-                  disabled={isWorkflowActionBusy}
-                  onClick={() => onOpenNodeAgent?.(selectedTemplateId, selectedNode.id)}
-                  type="button"
-                >
-                  在节点智能体管理中编辑
-                </button>
-                <p className="ide-config-hint">配置 Prompt、Schema、字段映射与版本，类似 Dify 的 LLM / Tool 节点编辑器。</p>
-              </div>
+          </>
+        )}
+        {selectedNode.configFields.slice(0, compact ? 2 : undefined).map((field) => (
+          <label key={field.key} title={configFieldHints[field.key]}>
+            {formatConfigFieldLabel(field)}
+            {configFieldHints[field.key] ? (
+              <small className="ide-form__hint">{configFieldHints[field.key]}</small>
+            ) : null}
+            {field.kind === "textarea" ? (
+              <textarea
+                value={field.value}
+                onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({
+                  ...node,
+                  configFields: node.configFields.map((item) =>
+                    item.key === field.key ? { ...item, value: event.target.value } : item
+                  )
+                }))}
+              />
+            ) : (
+              <input
+                value={field.value}
+                onChange={(event) => updateCanvasNode(selectedNode.id, (node) => ({
+                  ...node,
+                  configFields: node.configFields.map((item) =>
+                    item.key === field.key ? { ...item, value: event.target.value } : item
+                  )
+                }))}
+              />
             )}
-            <div className="ide-config-actions">
-              <button className="ghost-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={onResetCanvas} type="button">
-                放弃修改
-              </button>
-              <button className="primary-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={() => void onSaveCanvas()} type="button">
-                保存画布
-              </button>
-            </div>
+          </label>
+        ))}
+        {canOpenNodeAgent && !compact && (
+          <div className="ide-config-actions ide-config-actions--agent">
+            <button
+              className="ghost-button"
+              disabled={isWorkflowActionBusy}
+              onClick={() => onOpenNodeAgent?.(selectedTemplateId, selectedNode.id)}
+              type="button"
+            >
+              智能体编辑
+            </button>
           </div>
-        ) : null}
+        )}
       </div>
+      <div className="ide-config-actions ide-config-actions--compact">
+        {onDeleteSelectedNode && (
+          <button
+            className="danger-button"
+            disabled={isWorkflowActionBusy}
+            onClick={onDeleteSelectedNode}
+            type="button"
+          >
+            删节点
+          </button>
+        )}
+        <button className="ghost-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={onResetCanvas} type="button">
+          撤销
+        </button>
+        <button className="primary-button" disabled={!isCanvasDirty || isWorkflowActionBusy} onClick={() => void onSaveCanvas()} type="button">
+          保存
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function WorkflowCanvasInspector(props: WorkflowCanvasInspectorProps) {
+  const { canvasNodes, selectedEdge, selectedNode } = props;
+  return (
+    <aside className="ide-inspector" aria-label={selectedEdge ? "连线配置面板" : "节点配置面板"}>
+      <div className="ide-pane-header ide-pane-header--stacked">
+        {selectedEdge ? (
+          <>
+            <span>连线</span>
+            <strong>
+              {`${canvasNodes.find((node) => node.id === selectedEdge.source)?.title ?? selectedEdge.source} → ${
+                canvasNodes.find((node) => node.id === selectedEdge.target)?.title ?? selectedEdge.target
+              }`}
+            </strong>
+          </>
+        ) : (
+          <strong className="inspector-main-title">{selectedNode?.title ?? "节点"}</strong>
+        )}
+      </div>
+      {selectedEdge ? (
+        <WorkflowEdgeConfigPanel
+          canvasNodes={props.canvasNodes}
+          isCanvasDirty={props.isCanvasDirty}
+          isWorkflowActionBusy={props.isWorkflowActionBusy}
+          onDeleteSelectedEdge={props.onDeleteSelectedEdge}
+          onSaveCanvas={props.onSaveCanvas}
+          selectedEdge={selectedEdge}
+          updateCanvasEdge={props.updateCanvasEdge}
+        />
+      ) : (
+        <WorkflowInspectorEditor {...props} />
+      )}
     </aside>
   );
 }

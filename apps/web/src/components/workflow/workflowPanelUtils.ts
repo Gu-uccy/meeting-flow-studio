@@ -9,12 +9,24 @@ import type {
 import type { WorkflowNodeData } from "./workflowPanelTypes";
 
 export const toneByKind: Record<string, string> = {
-  trigger: "#8fc0c5",
-  ai: "#8fc0c5",
+  trigger: "#2563eb",
+  ai: "#0891b2",
   knowledge: "#7c3aed",
   decision: "#d97706",
   action: "#dc2626"
 };
+
+export const workflowCanvasZoomBounds = {
+  minZoom: 0.45,
+  maxZoom: 1.75
+} as const;
+
+export const workflowCanvasFitViewOptions = {
+  padding: 0.06,
+  maxZoom: 1,
+  minZoom: 0.88,
+  duration: 160
+} as const;
 
 export const runStatusLabels: Record<ProductWorkflowRunStatus, string> = {
   queued: "排队中",

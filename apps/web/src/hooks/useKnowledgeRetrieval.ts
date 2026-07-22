@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 import type { KnowledgeRetrievalConfig } from "../lib/knowledgeConfig";
 import type { PromptRetrievalContext } from "../lib/promptPreview";
 
@@ -49,7 +49,7 @@ export function useKnowledgeRetrieval(
           sources: options.sources
         })
       });
-      const data = (await response.json()) as KnowledgeRetrieveResponse;
+      const data = (await readJson(response)) as KnowledgeRetrieveResponse;
 
       if (!response.ok || !data.result) {
         throw new Error(data.message ?? "向量检索上下文加载失败。");

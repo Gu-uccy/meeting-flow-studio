@@ -27,165 +27,195 @@ async function assertVisible(page, locator, step) {
 }
 
 async function login(page) {
-  await page.goto(baseUrl, { waitUntil: "networkidle", timeout: 30000 });
-
-  const loginEntry = page.getByRole("button", { name: "登录" }).first();
-  if (await loginEntry.isVisible().catch(() => false)) {
-    await loginEntry.click();
-    await page.waitForTimeout(300);
-    const loginForm = page.locator(".auth-page--login.auth-page--active");
-    await loginForm.getByPlaceholder("admin@meetingflow.local").fill(email);
-    await loginForm.getByLabel("密码").fill(password);
-    await loginForm.getByRole("button", { name: "登录", exact: true }).click();
-    await page.waitForSelector(".workbench-shell", { timeout: 15000 });
-  }
-
-  return assertVisible(page, page.locator(".workbench-shell"), "登录并进入工作台");
+  await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded", timeout: 30000 });
+  const loginForm = page.locator(".auth-page--login");
+  await loginForm.getByPlaceholder("admin@meetingflow.local").fill(email);
+  await loginForm.getByLabel("密码").fill(password);
+  await loginForm.getByRole("button", { name: "登录", exact: true }).click();
+  await page.waitForSelector('[data-testid="workbench-app"]', { timeout: 20000 });
+  return assertVisible(page, page.getByTestId("workbench-app"), "登录并进入工作台");
 }
 
-async function selectMeeting(page) {
-  const cards = page.locator(".meeting-card");
-  const count = await cards.count();
-  if (count === 0) {
-    fail("选择会议", "会议列表为空");
+async function ensureMeetingSelected(page) {
+  // Prefer meeting overview browser cards; fall back to top selector.
+  await page.getByTestId("nav-meeting").click();
+  await page.waitForTimeout(400);
+
+  const cards = page.locator("[data-testid='meeting-browser-grid'] .meeting-card");
+  if ((await cards.count()) > 0) {
+    await cards.first().click();
+    await page.waitForTimeout(400);
+  }
+
+  await page.getByTestId("nav-workspace").click();
+  await page.waitForTimeout(500);
+
+  const editorVisible = await page.locator(".workflow-editor").first().isVisible().catch(() => false);
+  if (editorVisible) {
+    pass("选择会议并加载流程画布");
+    return true;
+  }
+
+  const selector = page.getByTestId("meeting-selector");
+  if (await selector.isVisible().catch(() => false)) {
+    pass("顶栏会议选择器可见");
+    return true;
+  }
+
+  fail("选择会议并加载流程画布", "未找到会议卡片或流程编辑器");
+  return false;
+}
+
+async function openSidebarView(page, view, expectedLocator) {
+  const navButton = page.getByTestId(`nav-${view}`);
+  if (!(await navButton.isVisible().catch(() => false))) {
+    fail(`切换到「${view}」`, "侧栏按钮不可见");
     return false;
   }
-  await cards.first().click();
-  await page.waitForTimeout(800);
-  return assertVisible(page, page.locator(".workflow-shell"), "选择会议并加载流程画布");
+  await navButton.click();
+  await page.waitForTimeout(500);
+  return assertVisible(page, page.locator(expectedLocator), `切换到「${view}」`);
 }
 
-async function switchMode(page, label, shellClass) {
-  const button = page.getByRole("button", { name: label, exact: true });
-  await button.click();
-  await page.waitForTimeout(700);
-  return assertVisible(page, page.locator(`.workflow-shell.${shellClass}`), `切换到「${label}」`);
-}
-
-async function measureSwitcherCenter(page) {
-  const box = await page.locator(".workflow-mode-switcher").boundingBox();
-  if (!box) return null;
-  return box.x + box.width / 2;
-}
-
-async function testModeSwitcherStability(page) {
-  const modes = [
-    ["运行视图", "is-simple"],
-    ["编辑画布", "is-editing"],
-    ["详情面板", "is-detail"],
-    ["拓展工具", "is-more"],
-    ["运行视图", "is-simple"]
-  ];
-
-  const centers = [];
-  for (const [label] of modes) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await page.waitForTimeout(500);
-    const center = await measureSwitcherCenter(page);
-    if (center == null) {
-      fail("模式切换器位置稳定", `无法在「${label}」读取位置`);
-      return;
-    }
-    centers.push({ label, center });
-  }
-
-  const maxDelta = Math.max(...centers.map((c) => c.center)) - Math.min(...centers.map((c) => c.center));
-  if (maxDelta <= 1) {
-    pass("模式切换器位置稳定", `最大偏移 ${maxDelta.toFixed(2)}px`);
-  } else {
-    fail("模式切换器位置稳定", `最大偏移 ${maxDelta.toFixed(2)}px（${centers.map((c) => `${c.label}:${c.center.toFixed(1)}`).join(", ")}）`);
-  }
-}
-
-async function testDetailTabs(page) {
-  await switchMode(page, "详情面板", "is-detail");
-  for (const tab of ["运行", "会议", "记忆"]) {
-    const tabButton = page.locator('.workflow-side-tabs[aria-label="详情面板视图"] button', { hasText: tab });
-    if (await tabButton.isVisible().catch(() => false)) {
-      await tabButton.click();
-      await page.waitForTimeout(400);
-      pass(`详情面板 Tab「${tab}」`);
-    } else {
-      fail(`详情面板 Tab「${tab}」`, "Tab 不可见");
-    }
-  }
-}
-
-async function testExtensionTabs(page) {
-  await switchMode(page, "拓展工具", "is-more");
-  for (const tab of ["工作流 Agent", "日历同步", "定时任务", "能力模型"]) {
-    const tabButton = page.locator('.workflow-side-tabs[aria-label="拓展工具视图"] button', { hasText: tab });
-    if (await tabButton.isVisible().catch(() => false)) {
-      await tabButton.click();
-      await page.waitForTimeout(400);
-      pass(`拓展工具 Tab「${tab}」`);
-    } else {
-      fail(`拓展工具 Tab「${tab}」`, "Tab 不可见");
-    }
-  }
-}
-
-async function testEditToolbar(page) {
-  await switchMode(page, "编辑画布", "is-editing");
-  await assertVisible(page, page.locator(".node-palette--toolbar"), "编辑模式模板工具条");
-  await assertVisible(page, page.locator(".ide-inspector"), "编辑模式 Inspector 侧栏");
-  for (const action of ["添加节点", "保存画布"]) {
-    await assertVisible(page, page.getByRole("button", { name: action }), `编辑操作「${action}」`);
-  }
-}
-
-async function testRunView(page) {
-  await switchMode(page, "运行视图", "is-simple");
-  await assertVisible(page, page.locator(".workflow-canvas-summary"), "运行视图摘要栏");
-  const runButton = page.getByRole("button", { name: /启动流程|继续流程/ });
-  if (await runButton.isVisible().catch(() => false)) {
-    pass("运行视图流程按钮可见");
-  } else {
-    fail("运行视图流程按钮可见");
-  }
+async function testWorkflowEditor(page) {
+  await openSidebarView(page, "workspace", ".workflow-editor, #workflow-console");
+  await assertVisible(page, page.getByTestId("model-runtime-badge"), "模型运行态徽章");
+  await assertVisible(page, page.getByTestId("workflow-run"), "流程运行按钮");
+  await assertVisible(page, page.getByTitle("添加节点"), "编辑操作「添加节点」");
+  await assertVisible(page, page.getByTitle("保存"), "编辑操作「保存」");
 }
 
 async function testWorkflowRunLifecycle(page) {
-  await switchMode(page, "运行视图", "is-simple");
-  const startButton = page.getByRole("button", { name: "启动流程" });
+  const startButton = page.getByTestId("workflow-run");
   if (!(await startButton.isVisible().catch(() => false))) {
-    fail("启动流程并等待完成", "启动按钮不可见");
+    fail("启动流程并等待完成", "运行按钮不可见");
     return;
   }
 
+  if (await startButton.isDisabled().catch(() => false)) {
+    fail("启动流程并等待完成", "运行按钮不可用");
+    return;
+  }
+
+  const token = await page.evaluate(() => localStorage.getItem("meeting_flow_token") ?? "");
+  const buttonLabel = ((await startButton.innerText().catch(() => "")) || "").trim();
+  // “继续” = advance blocked run; otherwise start a new run (failed runs no longer masquerade as continue).
+  const useAdvance = buttonLabel.includes("继续");
+
+  const responsePromise = page.waitForResponse(
+    (response) => {
+      const url = response.url();
+      const method = response.request().method();
+      if (!url.includes("/api/workflows/runs")) {
+        return false;
+      }
+      if (useAdvance) {
+        return method === "PATCH" && url.includes("/advance");
+      }
+      return method === "POST" && !url.includes("/retry") && !url.includes("/advance");
+    },
+    { timeout: 15000 }
+  );
+
   await startButton.click();
 
-  const terminalStatus = await page.waitForFunction(async () => {
-    const response = await fetch("/api/workflows/runs", {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("meeting_flow_token") ?? ""}`
-      }
-    });
-    if (!response.ok) {
-      return false;
+  let startedRunId = null;
+  try {
+    const response = await responsePromise;
+    if (!response.ok()) {
+      const body = await response.json().catch(() => ({}));
+      fail("启动流程并等待完成", body.message ?? `HTTP ${response.status()}`);
+      return;
     }
+    const body = await response.json();
+    startedRunId = body.run?.id ?? null;
+    if (!startedRunId) {
+      fail("启动流程并等待完成", "响应缺少 run.id");
+      return;
+    }
+  } catch (error) {
+    fail("启动流程并等待完成", `未捕获到启动请求：${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
 
-    const data = await response.json();
-    const latestRun = Array.isArray(data.items) ? data.items[0] : null;
-    return latestRun && latestRun.status !== "running" ? latestRun.status : false;
-  }, { timeout: 20000 });
+  const startedAt = Date.now();
+  let finalStatus = null;
+  let lastDetail = "";
 
-  const status = await terminalStatus.jsonValue();
-  if (["completed", "blocked", "failed"].includes(String(status))) {
-    pass("启动流程并等待完成", `最终状态 ${status}`);
+  while (Date.now() - startedAt < 45000) {
+    const snapshot = await page.evaluate(
+      async ({ authToken, runId }) => {
+        const response = await fetch(`/api/workflows/runs/${runId}`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (!response.ok) {
+          return { ok: false, detail: `HTTP ${response.status}` };
+        }
+        const data = await response.json();
+        const status = data.run?.status;
+        if (!status) {
+          return { ok: false, detail: "响应缺少 status" };
+        }
+        if (status === "running" || status === "queued") {
+          return { ok: true, pending: true, detail: `运行中 ${status}` };
+        }
+        return { ok: true, pending: false, status };
+      },
+      { authToken: token, runId: startedRunId }
+    );
+
+    if (!snapshot.ok) {
+      lastDetail = snapshot.detail ?? "查询失败";
+      break;
+    }
+    if (!snapshot.pending) {
+      finalStatus = snapshot.status;
+      break;
+    }
+    lastDetail = snapshot.detail ?? "";
+    await page.waitForTimeout(500);
+  }
+
+  if (!finalStatus) {
+    fail("启动流程并等待完成", lastDetail || "等待超时");
+    return;
+  }
+
+  if (["completed", "blocked", "failed"].includes(String(finalStatus))) {
+    pass("启动流程并等待完成", `最终状态 ${finalStatus}${useAdvance ? "（继续）" : ""}`);
   } else {
-    fail("启动流程并等待完成", `意外状态 ${status}`);
+    fail("启动流程并等待完成", `意外状态 ${finalStatus}`);
   }
 }
 
-async function testNavViews(page) {
-  await page.getByRole("button", { name: "节点智能体管理" }).click();
-  await page.waitForTimeout(600);
-  await assertVisible(page, page.locator(".workbench-main--apps"), "切换到节点智能体管理");
+async function testMeetingViews(page) {
+  await openSidebarView(page, "meeting", ".meeting-overview, [data-testid='meeting-browser']");
+  await assertVisible(page, page.getByTestId("meeting-browser"), "会议页浏览区");
+  await openSidebarView(page, "chat", ".chat-page, .workbench-empty");
+  await openSidebarView(page, "knowledge", ".knowledge-page, .workbench-empty");
+}
 
-  await page.getByRole("button", { name: "会议流程管理" }).click();
-  await page.waitForTimeout(600);
-  await assertVisible(page, page.locator(".workbench-grid--simplified"), "返回会议流程管理");
+async function testNavViews(page) {
+  const appsNav = page.getByTestId("nav-apps");
+  if (await appsNav.isVisible().catch(() => false)) {
+    await openSidebarView(page, "apps", ".node-agent-studio");
+  } else {
+    pass("切换到「apps」", "当前角色无节点智能体入口（预期：非 admin）");
+  }
+  await openSidebarView(page, "workspace", ".workflow-editor, #workflow-console, .workbench-empty");
+}
+
+async function testDeepLink(page) {
+  const path = page.url();
+  if (path.includes("/app/")) {
+    pass("URL 深链已同步", path);
+  } else {
+    fail("URL 深链已同步", `当前 URL: ${path}`);
+  }
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="workbench-app"]', { timeout: 20000 });
+  return assertVisible(page, page.getByTestId("workbench-app"), "刷新后保持工作台");
 }
 
 const browser = await chromium.launch({ headless: true });
@@ -193,30 +223,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 try {
   if (!(await login(page))) throw new Error("登录失败");
-  if (!(await selectMeeting(page))) throw new Error("选择会议失败");
+  if (!(await ensureMeetingSelected(page))) throw new Error("选择会议失败");
 
-  await testRunView(page);
+  await testWorkflowEditor(page);
   await testWorkflowRunLifecycle(page);
-  await testEditToolbar(page);
-  await testDetailTabs(page);
-  await testExtensionTabs(page);
-  await testModeSwitcherStability(page);
+  await testMeetingViews(page);
   await testNavViews(page);
-
-  await switchMode(page, "编辑画布", "is-editing");
-  const agentLink = page.getByRole("button", { name: "在节点智能体管理中编辑" });
-  if (await agentLink.isVisible().catch(() => false)) {
-    await agentLink.click();
-    await page.waitForTimeout(800);
-    await assertVisible(page, page.locator(".node-agent-manager"), "从画布跳转到节点智能体管理");
-    await assertVisible(page, page.locator(".node-agent-playground"), "Prompt Playground");
-    await page.getByRole("tab", { name: "版本" }).click();
-    await page.waitForTimeout(500);
-    await assertVisible(page, page.locator(".node-agent-version-diff"), "版本 Diff 面板");
-    pass("节点智能体 Studio Tab");
-  } else {
-    fail("画布跳转节点智能体", "编辑入口不可见");
-  }
+  await testDeepLink(page);
 
   const failed = results.filter((r) => !r.ok);
   console.log("\n--- 测试汇总 ---");

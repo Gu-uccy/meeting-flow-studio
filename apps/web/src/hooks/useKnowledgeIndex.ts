@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 export type KnowledgeIndexStats = {
   chunkCount: number;
@@ -13,6 +13,7 @@ export type KnowledgeIndexStats = {
 
 type KnowledgeIndexResponse = {
   index: KnowledgeIndexStats;
+  available?: boolean;
   message?: string;
 };
 
@@ -22,6 +23,7 @@ function parseErrorMessage(fallback: string, value: unknown) {
 
 export function useKnowledgeIndex(isEnabled = true) {
   const [index, setIndex] = useState<KnowledgeIndexStats | null>(null);
+  const [available, setAvailable] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [error, setError] = useState("");
@@ -37,13 +39,14 @@ export function useKnowledgeIndex(isEnabled = true) {
 
     try {
       const response = await apiClient("/api/knowledge/index");
-      const data = (await response.json()) as Partial<KnowledgeIndexResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<KnowledgeIndexResponse> & { message?: string };
 
       if (!response.ok || !data.index) {
         throw new Error(data.message ?? "向量索引状态加载失败，请稍后重试。");
       }
 
       setIndex(data.index);
+      setAvailable(data.available !== false && data.index.embeddingModel !== "unavailable");
     } catch (requestError) {
       setError(parseErrorMessage("向量索引状态加载失败，请稍后重试。", requestError));
     } finally {
@@ -62,13 +65,14 @@ export function useKnowledgeIndex(isEnabled = true) {
 
     try {
       const response = await apiClient("/api/knowledge/index/rebuild", { method: "POST" });
-      const data = (await response.json()) as Partial<KnowledgeIndexResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<KnowledgeIndexResponse> & { message?: string };
 
       if (!response.ok || !data.index) {
         throw new Error(data.message ?? "向量索引重建失败，请稍后重试。");
       }
 
       setIndex(data.index);
+      setAvailable(true);
       setFeedback(data.message ?? "向量索引已重建");
       return data.index;
     } catch (requestError) {
@@ -80,6 +84,7 @@ export function useKnowledgeIndex(isEnabled = true) {
   }
 
   return {
+    available,
     error,
     feedback,
     index,

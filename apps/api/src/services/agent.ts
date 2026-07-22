@@ -21,6 +21,7 @@ type MeetingAgentInput = {
   templates: ProductWorkflowTemplate[];
   plan?: MeetingAgentWorkflowPlan | null;
   modelApiKey?: string;
+  userId?: string;
   selectedTemplate?: ProductWorkflowTemplate | null;
   executedRun?: ProductWorkflowRun | null;
 };
@@ -90,11 +91,14 @@ function buildFallbackPlan(input: Pick<MeetingAgentInput, "meeting" | "templates
   };
 }
 
-export async function planMeetingAgentWorkflow(input: Pick<MeetingAgentInput, "meeting" | "memories" | "runs" | "templates" | "modelApiKey">): Promise<MeetingAgentWorkflowPlan> {
-  const fallbackPlan = buildFallbackPlan(input);
+export async function planMeetingAgentWorkflow(input: Pick<MeetingAgentInput, "meeting" | "memories" | "runs" | "templates" | "modelApiKey" | "userId">): Promise<MeetingAgentWorkflowPlan> {
+  if (!isLLMAvailable(input.modelApiKey)) {
+    throw new Error("未配置 AI API Key，工作流 Agent 不可用。请在账号设置中填写 OpenAI 兼容密钥，或配置 AI_API_KEY / OPENAI_API_KEY");
+  }
 
-  if (!fallbackPlan.templateId || !isLLMAvailable(input.modelApiKey)) {
-    return fallbackPlan;
+  const seedPlan = buildFallbackPlan(input);
+  if (!seedPlan.templateId) {
+    throw new Error("没有可用工作流模板");
   }
 
   const meetingContext = buildMeetingContext(input.meeting);
@@ -133,21 +137,19 @@ export async function planMeetingAgentWorkflow(input: Pick<MeetingAgentInput, "m
 
   try {
     const result = await callLLM({
-      model: "claude-sonnet-4",
+      model: "gpt-4o-mini",
       prompt,
       temperature: 0.1,
       maxTokens: 220,
-      apiKey: input.modelApiKey
+      apiKey: input.modelApiKey,
+      userId: input.userId
     });
     const parsed = extractJsonObject(result.content);
     const templateId = typeof parsed?.["templateId"] === "string" ? parsed["templateId"] : "";
     const rationale = typeof parsed?.["rationale"] === "string" ? parsed["rationale"] : "";
 
     if (!input.templates.some((template) => template.id === templateId)) {
-      return {
-        ...fallbackPlan,
-        rationale: `AI 返回的模板不可用，已降级：${fallbackPlan.rationale}`
-      };
+      throw new Error(`AI 返回的模板不可用：${templateId || "(空)"}`);
     }
 
     return {
@@ -156,8 +158,11 @@ export async function planMeetingAgentWorkflow(input: Pick<MeetingAgentInput, "m
       model: result.model,
       degraded: false
     };
-  } catch {
-    return fallbackPlan;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("未配置 AI API Key")) {
+      throw error;
+    }
+    throw new Error(error instanceof Error ? `Agent 模板规划失败：${error.message}` : "Agent 模板规划失败");
   }
 }
 
@@ -381,11 +386,7 @@ function buildFallbackSummary(input: MeetingAgentInput, actions: MeetingAgentAct
 
 async function buildLlmSummary(input: MeetingAgentInput, actions: MeetingAgentAction[], insights: MeetingAgentInsight[]) {
   if (!isLLMAvailable(input.modelApiKey)) {
-    return {
-      model: "local-rule-agent",
-      summary: buildFallbackSummary(input, actions, insights),
-      degraded: true
-    };
+    throw new Error("未配置 AI API Key，工作流 Agent 不可用。请在账号设置中填写 OpenAI 兼容密钥，或配置 AI_API_KEY / OPENAI_API_KEY");
   }
 
   const meetingContext = buildMeetingContext(input.meeting);
@@ -407,27 +408,20 @@ async function buildLlmSummary(input: MeetingAgentInput, actions: MeetingAgentAc
     ...insights.map((insight) => `- ${insight.kind} / ${insight.title}: ${insight.description}`)
   ].join("\n");
 
-  try {
-    const result = await callLLM({
-      model: "claude-sonnet-4",
-      prompt,
-      temperature: 0.2,
-      maxTokens: 260,
-      apiKey: input.modelApiKey
-    });
+  const result = await callLLM({
+    model: "gpt-4o-mini",
+    prompt,
+    temperature: 0.2,
+    maxTokens: 260,
+    apiKey: input.modelApiKey,
+    userId: input.userId
+  });
 
-    return {
-      model: result.model,
-      summary: result.content.trim() || buildFallbackSummary(input, actions, insights),
-      degraded: false
-    };
-  } catch {
-    return {
-      model: "local-rule-agent",
-      summary: buildFallbackSummary(input, actions, insights),
-      degraded: true
-    };
-  }
+  return {
+    model: result.model,
+    summary: result.content.trim() || buildFallbackSummary(input, actions, insights),
+    degraded: false
+  };
 }
 
 export async function runMeetingAgent(input: MeetingAgentInput): Promise<MeetingAgentRun> {

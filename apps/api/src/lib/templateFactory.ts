@@ -46,7 +46,7 @@ export function createBlankWorkflowTemplate(params: {
         outputs: ["result"],
         configFields: [
           { key: "model", label: "模型", value: "claude-sonnet-4", kind: "select" },
-          { key: "temperature", label: "温度", value: "0.5", kind: "select" }
+          { key: "temperature", label: "创造性", value: "0.5", kind: "select" }
         ]
       }
     ],
