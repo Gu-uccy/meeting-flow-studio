@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   AiApplicationOutputField,
   MeetingRecord,
   ProductNodeRun,
@@ -13,6 +13,7 @@ import {
   buildNodeAgentPrompt,
   callLLM,
   callLLMWithStructuredOutput,
+  isLlmTimeoutError,
   extractConfigValues,
   isLLMAvailable
 } from "./llm.js";
@@ -39,6 +40,7 @@ import { resolvePublishedNodeRuntime } from "./nodeAgentRuntime.js";
 
 export type WorkflowExecutionOptions = {
   apiKey?: string;
+  baseUrl?: string;
   userId?: string;
 };
 
@@ -307,27 +309,7 @@ function inferNodeOutputType(output: string): AiApplicationOutputField["type"] {
   return "json";
 }
 
-function buildMockStructuredOutput(schema: AiApplicationOutputField[], node: ProductWorkflowNode, meeting: MeetingRecord) {
-  return Object.fromEntries(
-    schema.map((field) => {
-      if (field.type === "number") {
-        return [field.key, field.key.toLowerCase().includes("risk") ? (meeting.priority === "high" || meeting.priority === "critical" ? 2 : 1) : meeting.agendaItems.length];
-      }
-
-      if (field.type === "boolean") {
-        return [field.key, true];
-      }
-
-      if (field.type === "text") {
-        return [field.key, `${node.title} 模拟输出`];
-      }
-
-      return [field.key, { source: "mock", nodeId: node.id, meetingId: meeting.id, ready: true }];
-    })
-  );
-}
-
-function applyNodeOutputSchema(node: ProductWorkflowNode, meeting: MeetingRecord, outputPayload: RuntimePayload): RuntimePayload {
+function applyNodeOutputSchema(node: ProductWorkflowNode, _meeting: MeetingRecord, outputPayload: RuntimePayload): RuntimePayload {
   const schema = getNodeOutputSchema(node);
   if (schema.length === 0) {
     return outputPayload;
@@ -349,11 +331,14 @@ function applyNodeOutputSchema(node: ProductWorkflowNode, meeting: MeetingRecord
     throw new Error(`模型未返回合法 JSON，无法匹配 Output Schema。原始输出：${preview}${outputPayload.llmContent.length > 280 ? "..." : ""}`);
   }
 
-  const rawOutput =
-    rawStructuredOutput ??
-    (outputPayload.outputSchemaSource === "mock" || typeof outputPayload.llmContent !== "string"
-      ? { ...buildMockStructuredOutput(schema, node, meeting), ...outputPayload }
-      : {});
+  if (!rawStructuredOutput) {
+    if (typeof outputPayload.llmContent === "string") {
+      throw new Error("模型未返回合法 JSON，无法匹配 Output Schema");
+    }
+    throw new Error("AI 节点未返回可用输出，无法匹配 Output Schema");
+  }
+
+  const rawOutput = rawStructuredOutput;
   const { output, errors } = validateStructuredOutput(schema, rawOutput);
 
   if (errors.length > 0) {
@@ -395,63 +380,65 @@ async function executeAgentNode(
   if (!renderedAgentPrompt && schemaPrompt) {
     prompt = `${prompt}\n\n${schemaPrompt}`;
   }
-  const model = node.agentPromptConfig?.model ?? config["model"] ?? "claude-sonnet-4";
+  const model = node.agentPromptConfig?.model ?? config["model"] ?? "gpt-4o-mini";
   const temperature = node.agentPromptConfig?.temperature ?? config["temperature"] ?? 0.5;
 
-  if (isLLMAvailable(options?.apiKey)) {
-    if (outputSchema.length > 0) {
-      try {
-        const result = await callLLMWithStructuredOutput({
-          model,
-          prompt,
-          systemPrompt: renderedAgentPrompt?.systemPrompt || undefined,
-          temperature,
-          maxTokens: node.agentPromptConfig?.maxTokens,
-          apiKey: options?.apiKey,
-          outputSchema
-        });
-
-        return {
-          llmContent: result.content,
-          llmModel: result.model,
-          llmPrompt: prompt,
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
-          agentRuntime: "llm",
-          responseFormat: "json_schema_native",
-          structuredOutput: result.structuredOutput
-        };
-      } catch {
-        // Fall back to prompt-guided JSON when native schema is unavailable.
-      }
-    }
-
-    const result = await callLLM({
-      model,
-      prompt,
-      systemPrompt: systemPrompt || undefined,
-      temperature,
-      maxTokens: node.agentPromptConfig?.maxTokens,
-      apiKey: options?.apiKey
-    });
-
-    return {
-      llmContent: result.content,
-      llmModel: result.model,
-      llmPrompt: prompt,
-      inputTokens: result.inputTokens,
-      outputTokens: result.outputTokens,
-      agentRuntime: "llm",
-      responseFormat: outputSchema.length > 0 ? "json_schema" : "text"
-    };
+  if (!isLLMAvailable(options?.apiKey)) {
+    throw new Error("未配置 AI API Key，AI 节点无法执行。请在账号设置中填写 OpenAI 兼容密钥，或配置 AI_API_KEY / OPENAI_API_KEY");
   }
 
+  if (outputSchema.length > 0) {
+    try {
+      const result = await callLLMWithStructuredOutput({
+        model,
+        prompt,
+        systemPrompt: renderedAgentPrompt?.systemPrompt || undefined,
+        temperature,
+        maxTokens: node.agentPromptConfig?.maxTokens,
+        apiKey: options?.apiKey,
+        baseUrl: options?.baseUrl,
+        userId: options?.userId,
+        outputSchema
+      });
+
+      return {
+        llmContent: result.content,
+        llmModel: result.model,
+        llmPrompt: prompt,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        agentRuntime: "llm",
+        responseFormat: "json_schema_native",
+        structuredOutput: result.structuredOutput
+      };
+    } catch (error) {
+      // Timeouts / aborts / hard network failures must not fall through to a second LLM call.
+      if (isLlmTimeoutError(error) || (error instanceof Error && /fetch failed|401|403/i.test(error.message))) {
+        throw error;
+      }
+      // Fall back to prompt-guided JSON when native schema is unavailable.
+    }
+  }
+
+  const result = await callLLM({
+    model,
+    prompt,
+    systemPrompt: systemPrompt || undefined,
+    temperature,
+    maxTokens: node.agentPromptConfig?.maxTokens,
+    apiKey: options?.apiKey,
+    baseUrl: options?.baseUrl,
+    userId: options?.userId
+  });
+
   return {
-    agendaItems: meeting.agendaItems.length,
-    note: "LLM 未接入（ANTHROPIC_API_KEY 未配置），使用模拟输出",
-    outputSchemaSource: "mock",
-    agentRuntime: "mock",
-    ...buildMockStructuredOutput(getNodeOutputSchema(node), node, meeting)
+    llmContent: result.content,
+    llmModel: result.model,
+    llmPrompt: prompt,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    agentRuntime: "llm",
+    responseFormat: outputSchema.length > 0 ? "json_schema" : "text"
   };
 }
 
@@ -479,7 +466,7 @@ async function executeToolPresetNode(
           startAt: meeting.startAt,
           title: meeting.title
         },
-        message: externalCalendar.provider === "mock" ? "已生成模拟 Google 日历事件" : "已同步到 Google Calendar"
+        message: "已同步到 Google Calendar"
       };
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : "Google Calendar 同步失败");
@@ -488,20 +475,25 @@ async function executeToolPresetNode(
 
   if (toolPreset === "feishu-calendar") {
     try {
-      const externalCalendar = await syncFeishuCalendarEvent(userId, meeting);
+      const { externalCalendar, externalMeeting } = await syncFeishuCalendarEvent(userId, meeting);
       return {
         channel: "feishu-calendar",
         externalCalendar,
+        externalMeeting,
         meetingId: meeting.id,
         syncStatus: "success",
         toolPreset,
         toolResult: {
           eventId: externalCalendar.eventId,
+          meetingUrl: externalMeeting.meetingUrl,
           provider: externalCalendar.provider,
+          recordingStatus: externalMeeting.recordingStatus,
           startAt: meeting.startAt,
           title: meeting.title
         },
-        message: externalCalendar.provider === "mock" ? "已生成模拟飞书日程" : "已同步到飞书日历"
+        message: externalMeeting.meetingUrl
+          ? "已同步到飞书日历并绑定视频会议"
+          : "已同步到飞书日历"
       };
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : "飞书日历同步失败");
@@ -737,7 +729,33 @@ async function executeNodeByExecutor(
   };
 }
 
+function nodeRequiresMeetingRecording(node: ProductWorkflowNode) {
+  const flag = configValue(node, "requireRecording").toLowerCase();
+  if (flag === "关闭" || flag === "false" || flag === "0" || flag === "off") {
+    return false;
+  }
+  if (flag === "开启" || flag === "true" || flag === "1" || flag === "on") {
+    return true;
+  }
+  return node.id === "minutes" || node.outputs.includes("minutesDraft") || node.title.includes("纪要");
+}
+
+function hasReadyMeetingRecording(meeting: MeetingRecord) {
+  return meeting.externalMeeting?.recordingStatus === "ready";
+}
+
 function getBlockingReason(node: ProductWorkflowNode, meeting: MeetingRecord): string {
+  if (nodeRequiresMeetingRecording(node) && !hasReadyMeetingRecording(meeting)) {
+    const status = meeting.externalMeeting?.recordingStatus ?? "none";
+    const detail = meeting.externalMeeting?.statusMessage?.trim();
+    if (status === "pending") {
+      return detail || "飞书会议录音尚未就绪，请会后点击「刷新录制状态」后再继续";
+    }
+    if (status === "failed") {
+      return detail || "飞书会议录音拉取失败，请检查授权与会议绑定后重试";
+    }
+    return "整理纪要需要飞书会议录音。请先同步飞书并开启视频会议，会后刷新录制状态至就绪";
+  }
   if (node.id === "context" && !meeting.notes.trim()) {
     return "缺少会前材料或背景说明";
   }
@@ -745,6 +763,19 @@ function getBlockingReason(node: ProductWorkflowNode, meeting: MeetingRecord): s
     return "客户高优先级会议需要负责人审批";
   }
   return "";
+}
+
+function isNonRetryableNodeError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    isLlmTimeoutError(new Error(message)) ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("未配置 ai api key") ||
+    normalized.includes("401") ||
+    normalized.includes("403") ||
+    normalized.includes("invalid api key") ||
+    normalized.includes("incorrect api key")
+  );
 }
 
 async function executeNode(
@@ -774,11 +805,19 @@ async function executeNode(
     }
 
     const result = await executeNodeByExecutor(node, meeting, inputs, options);
-    if (result.status === "success") {
+    if (result.status === "success" || result.status === "blocked" || result.status === "skipped") {
       return result;
     }
 
     lastError = new Error(result.errorMessage ?? "节点执行失败");
+    // Timeouts / auth / hard network failures won't recover by retrying; avoid multiplying latency.
+    if (isNonRetryableNodeError(lastError.message)) {
+      return {
+        ...result,
+        status: "failed",
+        errorMessage: lastError.message
+      };
+    }
   }
 
   return {
@@ -1106,6 +1145,12 @@ export async function executeWorkflowRun(
       }
 
       nodeResults.set(nodeId, result);
+    }
+
+    const waveHasBlocked = waveResults.some(({ result }) => result.status === "blocked");
+    const waveHasFailed = waveResults.some(({ result }) => result.status === "failed");
+    if (waveHasBlocked || waveHasFailed) {
+      break;
     }
 
     await emitProgress("running", wave + 1 <= maxWave ? wave + 1 : null);

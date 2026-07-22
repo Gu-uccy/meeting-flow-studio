@@ -13,11 +13,13 @@ import {
   type IntegrationStatus,
   type IntegrationTone
 } from "../../lib/accountIntegrationUtils";
+import { SHOW_BACKUP_MEETING_APPS } from "../../lib/meetingAppConnection";
 import type { ServiceKeyRecord } from "../../hooks/useServiceApiKeys";
 import { StatusBanner } from "../common/StatusBanner";
+import { SelectableCardList } from "../common/SelectableCardList";
 
 type AccountIntegrationOverviewProps = {
-  onNavigateToAiSettings: () => void;
+  onOpenConfig: () => void;
 };
 
 function integrationToneClass(tone: IntegrationTone) {
@@ -88,13 +90,14 @@ function ServiceKeyApplicationPanel(props: {
       )}
 
       <div className="account-service-key-app__list">
-        {props.items.length > 0 ? (
-          props.items.map((item) => (
-            <div className="account-service-key-row" key={item.id}>
-              <div>
-                <strong>{item.label}</strong>
-                <small>{item.keyHint} · {formatDateTime(item.createdAt)}</small>
-              </div>
+        <SelectableCardList
+          ariaLabel="Service API Key"
+          empty={<p className="account-integration-empty">尚未创建 Service API Key</p>}
+          items={props.items.map((item) => ({
+            id: item.id,
+            title: item.label,
+            meta: `${item.keyHint} · ${formatDateTime(item.createdAt)}`,
+            actions: (
               <button
                 className="ghost-button"
                 disabled={props.isMutating}
@@ -103,17 +106,16 @@ function ServiceKeyApplicationPanel(props: {
               >
                 删除
               </button>
-            </div>
-          ))
-        ) : (
-          <p className="account-integration-empty">尚未创建 Service API Key</p>
-        )}
+            )
+          }))}
+          layout="stack"
+        />
       </div>
     </article>
   );
 }
 
-export function AccountIntegrationOverview({ onNavigateToAiSettings }: AccountIntegrationOverviewProps) {
+export function AccountIntegrationOverview({ onOpenConfig }: AccountIntegrationOverviewProps) {
   const {
     aiSettings,
     feishuCalendar,
@@ -154,18 +156,14 @@ export function AccountIntegrationOverview({ onNavigateToAiSettings }: AccountIn
     isLoading: feishuCalendar.isLoading,
     statusMessage: feishuCalendar.statusMessage
   });
-  const knowledgeStatus = getKnowledgeIntegrationStatus(knowledgeIndex.index, knowledgeIndex.isLoading);
+  const knowledgeStatus = getKnowledgeIntegrationStatus(knowledgeIndex.index, knowledgeIndex.isLoading, knowledgeIndex.available);
   const serviceApiStatus = getServiceApiIntegrationStatus(publishedApplications, serviceKeys.totalCount);
-
-  function scrollToAiSettings() {
-    onNavigateToAiSettings();
-  }
 
   return (
     <div className="account-integration-overview">
       <StatusBanner
-        error={[googleCalendar.error, feishuCalendar.error, knowledgeIndex.error, serviceKeys.error].filter(Boolean).join(" · ")}
-        feedback={[googleCalendar.feedback, feishuCalendar.feedback, knowledgeIndex.feedback, serviceKeys.feedback].filter(Boolean).join(" · ")}
+        error={[...(SHOW_BACKUP_MEETING_APPS ? [googleCalendar.error] : []), feishuCalendar.error, knowledgeIndex.error, serviceKeys.error].filter(Boolean).join(" · ")}
+        feedback={[...(SHOW_BACKUP_MEETING_APPS ? [googleCalendar.feedback] : []), feishuCalendar.feedback, knowledgeIndex.feedback, serviceKeys.feedback].filter(Boolean).join(" · ")}
       />
 
       <section className="account-platform-stats" aria-label="平台概览">
@@ -188,35 +186,42 @@ export function AccountIntegrationOverview({ onNavigateToAiSettings }: AccountIn
       </div>
 
       <section className="account-integration-grid" aria-label="集成总览">
-        <IntegrationCard status={aiStatus} title="Anthropic AI">
+        <IntegrationCard status={aiStatus} title="AI 服务（OpenAI 兼容）">
           <div className="account-integration-card__actions">
-            <button className="ghost-button" onClick={scrollToAiSettings} type="button">管理 Key</button>
-          </div>
-        </IntegrationCard>
-
-        <IntegrationCard status={googleStatus} title="Google Calendar">
-          <div className="account-integration-card__actions">
-            <button
-              className="ghost-button"
-              disabled={googleCalendar.isMutating || !googleCalendar.isConfigured || googleCalendar.isConnected}
-              onClick={() => void googleCalendar.connectGoogleCalendar()}
-              type="button"
-            >
-              连接 Google
+            <button className="ghost-button" onClick={onOpenConfig} type="button">
+              打开配置页
             </button>
-            {googleCalendar.redirectUri && <code>{googleCalendar.redirectUri}</code>}
           </div>
         </IntegrationCard>
 
-        <IntegrationCard status={feishuStatus} title="飞书日历">
+        {SHOW_BACKUP_MEETING_APPS ? (
+          <IntegrationCard status={googleStatus} title="Google Calendar">
+            <div className="account-integration-card__actions">
+              <button
+                className="ghost-button"
+                disabled={googleCalendar.isMutating || !googleCalendar.isConfigured || googleCalendar.isConnected}
+                onClick={() => void googleCalendar.connectGoogleCalendar()}
+                type="button"
+              >
+                连接 Google
+              </button>
+              {googleCalendar.redirectUri && <code>{googleCalendar.redirectUri}</code>}
+            </div>
+          </IntegrationCard>
+        ) : null}
+
+        <IntegrationCard status={feishuStatus} title="飞书会议">
           <div className="account-integration-card__actions">
             <button
-              className="ghost-button"
+              className="primary-button"
               disabled={feishuCalendar.isMutating || !feishuCalendar.isConfigured || feishuCalendar.isConnected}
               onClick={() => void feishuCalendar.connectFeishuCalendar()}
               type="button"
             >
               连接飞书
+            </button>
+            <button className="ghost-button" onClick={onOpenConfig} type="button">
+              打开配置页
             </button>
             {feishuCalendar.redirectUri && <code>{feishuCalendar.redirectUri}</code>}
           </div>

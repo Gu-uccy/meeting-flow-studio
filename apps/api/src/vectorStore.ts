@@ -7,8 +7,10 @@ import {
   embedTexts,
   getEmbeddingDimensions,
   getEmbeddingProvider,
-  type EmbeddingProvider
+  type EmbeddingProvider,
+  type EmbeddingRuntime
 } from "./services/embeddings.js";
+import { getEnvironmentAiDefaults } from "./services/aiServiceConfig.js";
 import { buildVectorChunkId, getTextChunkingOptions, splitTextIntoChunks } from "./services/textChunking.js";
 
 export type VectorChunkRecord = {
@@ -127,11 +129,15 @@ function buildChunks(memories: MeetingMemory[], meetings: MeetingRecord[], docum
 export async function syncVectorKnowledgeIndex(
   memories: MeetingMemory[],
   meetings: MeetingRecord[] = [],
-  documents: KnowledgeDocument[] = []
+  documents: KnowledgeDocument[] = [],
+  runtime?: EmbeddingRuntime
 ) {
-  const provider = getEmbeddingProvider();
+  const provider = getEmbeddingProvider(runtime);
   const chunks = buildChunks(memories, meetings, documents);
-  const embeddings = await embedTexts(chunks.map((chunk) => chunk.content));
+  const embeddings = await embedTexts(
+    chunks.map((chunk) => chunk.content),
+    runtime
+  );
 
   await withDatabase(async (db) => {
     await db.transaction(async (tx) => {
@@ -171,6 +177,7 @@ export async function searchVectorKnowledge(params: {
   query: string;
   topK?: number;
   minSimilarity?: number;
+  runtime?: EmbeddingRuntime;
 }): Promise<VectorSearchHit[]> {
   const query = params.query.trim();
   const topK = Math.max(1, params.topK ?? 6);
@@ -199,7 +206,7 @@ export async function searchVectorKnowledge(params: {
       return [];
     }
 
-    const queryEmbedding = await embedText(query);
+    const queryEmbedding = await embedText(query, params.runtime);
     return rows
       .map((row) => {
         const chunk = rowToChunk(row);
@@ -214,13 +221,20 @@ export async function searchVectorKnowledge(params: {
   });
 }
 
-export async function getVectorIndexStats() {
+export async function getVectorIndexStats(runtime?: EmbeddingRuntime) {
   return withDatabase(async (db) => {
     const row = await db.prepare("SELECT COUNT(*) as count FROM knowledge_vector_chunks").get<{ count: number }>();
+    const env = getEnvironmentAiDefaults();
+    const effective = runtime?.apiKey
+      ? runtime
+      : env.apiKey
+        ? { apiKey: env.apiKey, baseUrl: env.baseUrl, embeddingModel: env.embeddingModel }
+        : null;
+
     return {
       chunkCount: row?.count ?? 0,
       chunking: getTextChunkingOptions(),
-      embeddingModel: getEmbeddingProvider(),
+      embeddingModel: effective ? getEmbeddingProvider(effective) : "unavailable",
       dimensions: getEmbeddingDimensions()
     };
   });

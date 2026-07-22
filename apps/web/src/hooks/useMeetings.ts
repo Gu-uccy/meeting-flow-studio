@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 import {
   type CreateMeetingInput,
   type ActionItemStatus,
@@ -168,7 +168,7 @@ export function useMeetings(isEnabled = true) {
 
     try {
       const response = await apiClient("/api/meetings");
-      const data = (await response.json()) as MeetingsResponse;
+      const data = (await readJson(response)) as MeetingsResponse;
 
       if (!response.ok) {
         throw new Error("会议数据加载失败，请稍后重试。");
@@ -212,7 +212,7 @@ export function useMeetings(isEnabled = true) {
           submissionMode
         })
       });
-      const data = (await response.json()) as Partial<MeetingMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
 
       if (!response.ok || !data.meeting || !data.summary) {
         throw new Error(data.message ?? "会议创建失败，请检查输入内容。");
@@ -253,7 +253,7 @@ export function useMeetings(isEnabled = true) {
         },
         body: JSON.stringify(meetingInput)
       });
-      const data = (await response.json()) as Partial<MeetingMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
 
       if (!response.ok || !data.meeting || !data.summary) {
         throw new Error(data.message ?? "会议信息更新失败，请稍后重试。");
@@ -294,7 +294,7 @@ export function useMeetings(isEnabled = true) {
         },
         body: JSON.stringify({ status })
       });
-      const data = (await response.json()) as Partial<MeetingMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
 
       if (!response.ok || !data.meeting || !data.summary) {
         throw new Error(data.message ?? "会议状态更新失败，请稍后重试。");
@@ -335,7 +335,7 @@ export function useMeetings(isEnabled = true) {
       const response = await apiClient(`/api/meetings/${selectedMeetingId}`, {
         method: "DELETE"
       });
-      const data = (await response.json()) as Partial<DeleteMeetingResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<DeleteMeetingResponse> & { message?: string };
 
       if (!response.ok || !data.deletedId || !data.summary) {
         throw new Error(data.message ?? "会议删除失败，请稍后重试。");
@@ -412,7 +412,11 @@ export function useMeetings(isEnabled = true) {
     }));
   }
 
-  function updateFormParticipant(index: number, key: keyof MeetingParticipantInput, value: string) {
+  function updateFormParticipant(
+    index: number,
+    key: keyof MeetingParticipantInput,
+    value: MeetingParticipantInput[keyof MeetingParticipantInput]
+  ) {
     setFormState((current) => ({
       ...current,
       participants: current.participants.map((participant, participantIndex) =>

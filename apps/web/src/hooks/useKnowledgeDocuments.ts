@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 export type KnowledgeDocument = {
   content: string;
@@ -38,7 +38,7 @@ export function useKnowledgeDocuments(meetingId: string, isEnabled = true) {
 
     try {
       const response = await apiClient(`/api/knowledge/documents?meetingId=${encodeURIComponent(meetingId)}`);
-      const data = (await response.json()) as Partial<KnowledgeDocumentsResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<KnowledgeDocumentsResponse> & { message?: string };
 
       if (!response.ok || !Array.isArray(data.items)) {
         throw new Error(data.message ?? "知识文档加载失败，请稍后重试。");
@@ -71,7 +71,7 @@ export function useKnowledgeDocuments(meetingId: string, isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ meetingId, title, content, format })
       });
-      const data = (await response.json()) as { document?: KnowledgeDocument; message?: string };
+      const data = (await readJson(response)) as { document?: KnowledgeDocument; message?: string };
 
       if (!response.ok || !data.document) {
         throw new Error(data.message ?? "知识文档上传失败，请稍后重试。");
@@ -95,7 +95,7 @@ export function useKnowledgeDocuments(meetingId: string, isEnabled = true) {
 
     try {
       const response = await apiClient(`/api/knowledge/documents/${documentId}`, { method: "DELETE" });
-      const data = (await response.json()) as { message?: string };
+      const data = (await readJson(response)) as { message?: string };
 
       if (!response.ok) {
         throw new Error(data.message ?? "知识文档删除失败，请稍后重试。");
@@ -112,6 +112,41 @@ export function useKnowledgeDocuments(meetingId: string, isEnabled = true) {
     }
   }
 
+  async function seedDemoDocuments() {
+    if (!meetingId) {
+      return [];
+    }
+
+    setIsMutating(true);
+    setError("");
+    setFeedback("");
+
+    try {
+      const response = await apiClient("/api/knowledge/documents/seed-demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meetingId })
+      });
+      const data = (await readJson(response)) as Partial<KnowledgeDocumentsResponse> & {
+        createdCount?: number;
+        message?: string;
+      };
+
+      if (!response.ok || !Array.isArray(data.items)) {
+        throw new Error(data.message ?? "填充示例文档失败，请稍后重试。");
+      }
+
+      setItems(data.items);
+      setFeedback(data.message ?? "示例文档已填充");
+      return data.items;
+    } catch (requestError) {
+      setError(parseErrorMessage("填充示例文档失败，请稍后重试。", requestError));
+      return [];
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
   return {
     deleteDocument,
     error,
@@ -120,6 +155,7 @@ export function useKnowledgeDocuments(meetingId: string, isEnabled = true) {
     isMutating,
     items,
     reloadDocuments: loadDocuments,
+    seedDemoDocuments,
     uploadDocument
   };
 }

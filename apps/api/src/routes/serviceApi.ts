@@ -3,7 +3,7 @@ import { buildAiApplicationsFromTemplates } from "@meeting-flow/shared";
 import type { AppContext } from "../lib/context.js";
 import { selectWorkflowTemplate } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
-import { buildPermissions } from "../services/auth.js";
+import { buildPermissions, toPublicUser } from "../services/auth.js";
 import { findUserById } from "../userStore.js";
 import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
 import { enqueueWorkflowRunJob } from "../services/workflowJobRunner.js";
@@ -105,10 +105,7 @@ export async function serviceApiRoutes(app: FastifyInstance, ctx: AppContext) {
       return reply.code(401).send({ message: "Service API Key 所属用户不存在" });
     }
 
-    const permissions = buildPermissions(
-      { id: owner.id, email: owner.email, name: owner.name, role: owner.role, createdAt: owner.createdAt, updatedAt: owner.updatedAt },
-      meeting
-    );
+    const permissions = buildPermissions(await toPublicUser(owner), meeting);
     if (!permissions.canEdit) {
       return reply.code(403).send({ message: "当前 Service Key 无权运行该会议工作流" });
     }

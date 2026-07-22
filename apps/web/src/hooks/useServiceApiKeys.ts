@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 export type ServiceKeyRecord = {
   applicationId: string;
@@ -44,7 +44,7 @@ export function useServiceApiKeys(applicationId: string, isEnabled = true) {
 
     try {
       const response = await apiClient(`/api/apps/${applicationId}/service-keys`);
-      const data = (await response.json()) as Partial<ServiceKeyListResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ServiceKeyListResponse> & { message?: string };
 
       if (!response.ok || !data.items) {
         throw new Error(data.message ?? "Service API Key 加载失败");
@@ -74,7 +74,7 @@ export function useServiceApiKeys(applicationId: string, isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label })
       });
-      const data = (await response.json()) as Partial<ServiceKeyCreateResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ServiceKeyCreateResponse> & { message?: string };
 
       if (!response.ok || !data.serviceKey || !data.key) {
         throw new Error(data.message ?? "Service API Key 创建失败");
@@ -101,7 +101,7 @@ export function useServiceApiKeys(applicationId: string, isEnabled = true) {
       const response = await apiClient(`/api/apps/${applicationId}/service-keys/${keyId}`, {
         method: "DELETE"
       });
-      const data = (await response.json()) as { message?: string };
+      const data = (await readJson(response)) as { message?: string };
 
       if (!response.ok) {
         throw new Error(data.message ?? "Service API Key 删除失败");

@@ -1,14 +1,18 @@
-import { meetingFlowProduct } from "@meeting-flow/shared";
 import { useAuth } from "../../contexts/AuthContext";
 import { useWorkbench } from "../../contexts/WorkbenchContext";
-import { BrandMark } from "../common/BrandMark";
 import { Modal } from "../common/Modal";
 import { MeetingCreateForm } from "../meetings/MeetingCreateForm";
 import { MeetingDetailPanel } from "../meetings/MeetingDetailPanel";
 import { AccountPage } from "./AccountPage";
+import { ChatPage } from "./ChatPage";
+import { KnowledgePage } from "./KnowledgePage";
+import { MeetingSidePanelPage } from "./MeetingSidePanelPage";
 import { NodeAgentPage } from "./NodeAgentPage";
 import { RunsConsolePage } from "./RunsConsolePage";
 import { WorkspacePage } from "./WorkspacePage";
+import { AppLayout } from "./layout/AppLayout";
+import { MeetingHeaderActions } from "./layout/MeetingHeaderActions";
+import { resolveMeetingSidePanelTab } from "./layout/viewMeta";
 
 type WorkbenchShellProps = {
   onLogout: () => void;
@@ -16,77 +20,25 @@ type WorkbenchShellProps = {
 
 export function WorkbenchShell({ onLogout }: WorkbenchShellProps) {
   const { user } = useAuth();
-  const { workbenchView, setWorkbenchView, meetings, modals, openRunsConsole } = useWorkbench();
+  const { workbenchView, meetings, modals } = useWorkbench();
 
   if (!user) {
     return null;
   }
 
-  return (
-    <div className="retool-shell workbench-shell">
-      <header className="workbench-nav">
-        <div className="workbench-nav__brand" aria-label={meetingFlowProduct.name}>
-          <BrandMark />
-          <span>
-            <strong>{meetingFlowProduct.name}</strong>
-            <small>会议流程工作台</small>
-          </span>
-        </div>
-        <div className="nav-view-switch" aria-label="主视图切换">
-          <button
-            className={`nav-view-switch__button ${workbenchView === "workspace" ? "is-active" : ""}`}
-            onClick={() => setWorkbenchView("workspace")}
-            type="button"
-          >
-            会议流程管理
-          </button>
-          <button
-            className={`nav-view-switch__button ${workbenchView === "runs" ? "is-active" : ""}`}
-            onClick={() => openRunsConsole()}
-            type="button"
-          >
-            运行控制台
-          </button>
-          <button
-            className={`nav-view-switch__button ${workbenchView === "apps" ? "is-active" : ""}`}
-            onClick={() => setWorkbenchView("apps")}
-            type="button"
-          >
-            节点智能体管理
-          </button>
-        </div>
-        <div className="nav-actions">
-          <button
-            className={`nav-account ${workbenchView === "account" ? "is-active" : ""}`}
-            onClick={() => setWorkbenchView("account")}
-            type="button"
-          >
-            {user.name}
-          </button>
-          <span className="nav-divider" aria-hidden="true">|</span>
-          <button className="nav-logout" onClick={onLogout} type="button">
-            退出
-          </button>
-        </div>
-      </header>
+  const meetingSidePanelTab = resolveMeetingSidePanelTab(workbenchView);
 
-      <main
-        className={`workbench-main ${
-          workbenchView === "account"
-            ? "workbench-main--account"
-            : workbenchView === "apps"
-              ? "workbench-main--apps"
-              : workbenchView === "runs"
-                ? "workbench-main--runs"
-                : ""
-        }`}
-        id="workbench"
-      >
-        {workbenchView === "account" && <AccountPage />}
+  return (
+    <>
+      <AppLayout headerActions={<MeetingHeaderActions />} onLogout={onLogout} userName={user.name} view={workbenchView}>
         {workbenchView === "workspace" && <WorkspacePage />}
-        {workbenchView === "apps" && <NodeAgentPage />}
+        {meetingSidePanelTab ? <MeetingSidePanelPage tab={meetingSidePanelTab} /> : null}
+        {workbenchView === "chat" && <ChatPage />}
+        {workbenchView === "knowledge" && <KnowledgePage />}
         {workbenchView === "runs" && <RunsConsolePage />}
-      </main>
+        {workbenchView === "apps" && <NodeAgentPage />}
+        {workbenchView === "account" && <AccountPage />}
+      </AppLayout>
 
       {modals.isCreateOpen && (
         <Modal onClose={modals.closeCreate} size="xl" title="新建会议流程">
@@ -124,6 +76,6 @@ export function WorkbenchShell({ onLogout }: WorkbenchShellProps) {
           />
         </Modal>
       )}
-    </div>
+    </>
   );
 }

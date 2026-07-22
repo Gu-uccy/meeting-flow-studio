@@ -1,5 +1,6 @@
 import type { MeetingRecord, ProductWorkflowRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import { Modal } from "../common/Modal";
+import { SelectableCardList } from "../common/SelectableCardList";
 import { RunLatencyWaterfall } from "./RunLatencyWaterfall";
 import {
   formatRunTimestamp,
@@ -51,70 +52,82 @@ export function RunDetailDialog({ meeting, onClose, run, template }: RunDetailDi
         <div className="run-detail__grid">
           <section className="run-detail__section">
             <div className="run-detail__section-title"><strong>节点执行时间线</strong></div>
-            <div className="run-timeline">
-              {run.nodeRuns.map((nodeRun) => {
+            <SelectableCardList
+              ariaLabel="节点执行时间线"
+              className="run-timeline"
+              items={run.nodeRuns.map((nodeRun) => {
                 const node = getRunNode(template, nodeRun.nodeId);
-                return (
-                  <article className={`run-timeline__item run-timeline__item--${nodeRun.status}`} key={nodeRun.nodeId}>
-                    <span>{nodeRunLabels[nodeRun.status]}</span>
-                    <strong>{node?.title ?? nodeRun.nodeId}</strong>
-                    <p>{formatRunTimestamp(nodeRun.startedAt)} 至 {formatRunTimestamp(nodeRun.endedAt)}</p>
-                    {nodeRun.errorMessage && <em>{nodeRun.errorMessage}</em>}
-                  </article>
-                );
+                return {
+                  id: nodeRun.nodeId,
+                  title: node?.title ?? nodeRun.nodeId,
+                  badge: nodeRunLabels[nodeRun.status],
+                  description: nodeRun.errorMessage || undefined,
+                  meta: `${formatRunTimestamp(nodeRun.startedAt)} 至 ${formatRunTimestamp(nodeRun.endedAt)}`,
+                  className: `run-timeline__item run-timeline__item--${nodeRun.status} selectable-card--badge-leading`
+                };
               })}
-            </div>
+              layout="stack"
+            />
           </section>
 
           <section className="run-detail__section">
             <div className="run-detail__section-title"><strong>人工处理记录</strong></div>
-            {manualRecords.length > 0 ? (
-              <div className="run-manual-list">
-                {manualRecords.map(({ nodeRun, note }) => (
-                  <article key={nodeRun.nodeId}>
-                    <span>{getRunNode(template, nodeRun.nodeId)?.title ?? nodeRun.nodeId}</span>
-                    <strong>{note}</strong>
-                    <p>{formatRunTimestamp(nodeRun.endedAt)}</p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="run-detail__empty">本次运行没有人工处理记录。</p>
-            )}
+            <SelectableCardList
+              ariaLabel="人工处理记录"
+              className="run-manual-list"
+              empty={<p className="run-detail__empty">本次运行没有人工处理记录。</p>}
+              items={manualRecords.map(({ nodeRun, note }) => ({
+                id: nodeRun.nodeId,
+                title: note ?? "",
+                badge: getRunNode(template, nodeRun.nodeId)?.title ?? nodeRun.nodeId,
+                meta: formatRunTimestamp(nodeRun.endedAt),
+                className: "selectable-card--badge-leading selectable-card--title-clamp"
+              }))}
+              layout="stack"
+            />
           </section>
 
           <section className="run-detail__section run-detail__section--wide">
             <div className="run-detail__section-title"><strong>配置快照</strong></div>
-            <div className="run-config-snapshot">
-              {run.nodeRuns.map((nodeRun) => {
+            <SelectableCardList
+              ariaLabel="配置快照"
+              className="run-config-snapshot"
+              items={run.nodeRuns.map((nodeRun) => {
                 const explicitSnapshot = run.configSnapshot?.find((item) => item.nodeId === nodeRun.nodeId);
                 const currentNode = getRunNode(template, nodeRun.nodeId);
                 const snapshot = getRunConfigSnapshot(run, template, nodeRun.nodeId);
 
-                return (
-                  <article key={nodeRun.nodeId}>
-                    <strong>{snapshot.nodeTitle}</strong>
-                    {!explicitSnapshot && <p>这条历史运行没有保存配置快照，下面显示当前模板配置。</p>}
-                    <div>
-                      {snapshot.configFields.length > 0 ? (
-                        snapshot.configFields.map((field) => {
-                          const currentField = currentNode?.configFields.find((item) => item.key === field.key);
-                          const isChanged = Boolean(explicitSnapshot && currentField && currentField.value !== field.value);
-                          return (
-                            <code className={isChanged ? "is-changed" : ""} key={field.key}>
-                              {field.label}: {field.value}
-                              {isChanged && <em>当前: {currentField?.value}</em>}
-                            </code>
-                          );
-                        })
-                      ) : (
-                        <code>无配置项</code>
-                      )}
-                    </div>
-                  </article>
-                );
+                return {
+                  id: nodeRun.nodeId,
+                  title: snapshot.nodeTitle,
+                  className: "selectable-card--rich-body",
+                  description: (
+                    <>
+                      {!explicitSnapshot ? (
+                        <p>这条历史运行没有保存配置快照，下面显示当前模板配置。</p>
+                      ) : null}
+                      <div className="selectable-card__codes">
+                        {snapshot.configFields.length > 0 ? (
+                          snapshot.configFields.map((field) => {
+                            const currentField = currentNode?.configFields.find((item) => item.key === field.key);
+                            const isChanged = Boolean(explicitSnapshot && currentField && currentField.value !== field.value);
+                            return (
+                              <code className={isChanged ? "is-changed" : ""} key={field.key}>
+                                {field.label}: {field.value}
+                                {isChanged && <em>当前: {currentField?.value}</em>}
+                              </code>
+                            );
+                          })
+                        ) : (
+                          <code>无配置项</code>
+                        )}
+                      </div>
+                    </>
+                  )
+                };
               })}
-            </div>
+              layout="stack"
+            />
           </section>
 
           <section className="run-detail__section run-detail__section--wide">

@@ -42,6 +42,7 @@ export function LandingPage({ onLoginClick, onRegisterClick }: LandingPageProps)
 
           <div className="retool-hero__preview" id="workflow-preview">
             <ProductWorkflowPreview />
+            <p className="landing-preview-note">示意预览：登录后可在真实流程编辑器中编辑、运行与处理阻塞节点。</p>
           </div>
         </section>
 

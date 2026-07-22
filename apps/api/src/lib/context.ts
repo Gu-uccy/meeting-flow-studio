@@ -12,6 +12,7 @@ import {
   type UpdateMeetingInput,
   type AiApplicationVersion,
   updateMeetingStatusSchema,
+  DEFAULT_WORKSPACE_ID,
 } from "@meeting-flow/shared";
 import { applyMeetingRuntimeWriteback } from "../services/runtimeMapping.js";
 import { buildPermissions } from "../services/auth.js";
@@ -123,13 +124,14 @@ export function validateMeetingInput(input: { startAt: string; endAt: string; is
 
 export function buildMeetingRecord(
   input: EditableMeetingInput,
-  options: { id?: string; createdAt?: string; submittedAt?: string; ownerUserId?: string }
+  options: { id?: string; createdAt?: string; submittedAt?: string; ownerUserId?: string; workspaceId?: string }
 ): MeetingRecord {
   const now = new Date().toISOString();
   const sanitized = sanitizeMeetingInput(input);
   return {
     id: options.id ?? `meeting-${Date.now()}`,
     ...sanitized,
+    workspaceId: options.workspaceId ?? DEFAULT_WORKSPACE_ID,
     ownerUserId: options.ownerUserId ?? "",
     startAt: new Date(sanitized.startAt).toISOString(),
     endAt: new Date(sanitized.endAt).toISOString(),
@@ -144,11 +146,14 @@ export function buildMeetingRecord(
   };
 }
 
-export function createMeetingRecord(input: CreateMeetingInput, ownerUserId?: string): MeetingRecord {
+export function createMeetingRecord(
+  input: CreateMeetingInput,
+  options?: { ownerUserId?: string; workspaceId?: string }
+): MeetingRecord {
   const status = input.submissionMode === "save" ? "draft" : "scheduled";
   return buildMeetingRecord(
     { ...input, status, minutes: "", actionItems: [], notifications: { inviteSent: input.submissionMode === "submit", reminderSent: false, changeNotified: false } },
-    { ownerUserId }
+    { ownerUserId: options?.ownerUserId, workspaceId: options?.workspaceId }
   );
 }
 
@@ -157,6 +162,7 @@ export function updateMeetingRecord(meeting: MeetingRecord, input: UpdateMeeting
     id: meeting.id,
     createdAt: meeting.createdAt,
     ownerUserId: meeting.ownerUserId,
+    workspaceId: meeting.workspaceId,
     submittedAt: input.status === "draft" ? meeting.submittedAt : meeting.submittedAt || new Date().toISOString(),
   });
 }
@@ -297,6 +303,17 @@ export async function persistWorkflowMeetingWriteback(meeting: MeetingRecord, ru
         ...updated,
         externalCalendar: calendar,
         meetingLink: calendar?.hangoutLink || updated.meetingLink,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const externalMeeting = nodeRun.outputPayload?.externalMeeting;
+    if (externalMeeting && typeof externalMeeting === "object" && !Array.isArray(externalMeeting)) {
+      const meetingLink = (externalMeeting as MeetingRecord["externalMeeting"])?.meetingUrl;
+      updated = {
+        ...updated,
+        externalMeeting: externalMeeting as MeetingRecord["externalMeeting"],
+        meetingLink: meetingLink || updated.meetingLink,
         updatedAt: new Date().toISOString()
       };
     }

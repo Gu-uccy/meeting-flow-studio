@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MeetingAgentRun, ProductWorkflowRun } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 type MeetingAgentResponse = {
   agentRun: MeetingAgentRun;
@@ -39,7 +39,7 @@ export function useMeetingAgent(isEnabled = true, meetingId = "") {
         method: "POST",
         body: JSON.stringify({})
       });
-      const data = (await response.json()) as Partial<MeetingAgentResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingAgentResponse> & { message?: string };
 
       if (!response.ok || !data.agentRun) {
         throw new Error(data.message ?? "Agent 分析失败，请稍后重试。");

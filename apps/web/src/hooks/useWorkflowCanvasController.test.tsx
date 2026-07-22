@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Edge, Node } from "reactflow";
 import { act, type DragEvent as ReactDragEvent } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MeetingRecord,
   ProductWorkflowEdge,
@@ -13,9 +13,18 @@ import type {
 } from "@meeting-flow/shared";
 import type { WorkflowNodeData } from "../components/workflow/workflowPanelTypes";
 import {
-  useWorkflowCanvasState,
-  type UseWorkflowCanvasStateOptions
-} from "./useWorkflowCanvasState";
+  useWorkflowCanvasController,
+  type UseWorkflowCanvasControllerOptions
+} from "./useWorkflowCanvasController";
+import { useWorkflowCanvasStore } from "../stores/workflowCanvasStore";
+import { useWorkflowEditorStore } from "../stores/workflowEditorStore";
+import { useWorkflowExecutionStore } from "../stores/workflowExecutionStore";
+
+function resetWorkflowStores() {
+  useWorkflowCanvasStore.getState().resetCanvasStore();
+  useWorkflowExecutionStore.getState().resetExecutionStore();
+  useWorkflowEditorStore.getState().resetEditorStore();
+}
 
 function makeNode(id: string, overrides: Partial<ProductWorkflowNode> = {}): ProductWorkflowNode {
   return {
@@ -73,13 +82,13 @@ function makeMeeting(id: string, type: MeetingRecord["type"]): MeetingRecord {
   return { id, type, status: "scheduled" } as MeetingRecord;
 }
 
-function createCallbacks(overrides: Partial<UseWorkflowCanvasStateOptions> = {}) {
+function createCallbacks(overrides: Partial<UseWorkflowCanvasControllerOptions> = {}) {
   return {
-    onSaveTemplateCanvas: vi.fn<UseWorkflowCanvasStateOptions["onSaveTemplateCanvas"]>().mockResolvedValue(null),
-    onStartWorkflowRun: vi.fn<UseWorkflowCanvasStateOptions["onStartWorkflowRun"]>().mockResolvedValue(null),
-    onAdvanceWorkflowRun: vi.fn<UseWorkflowCanvasStateOptions["onAdvanceWorkflowRun"]>().mockResolvedValue(null),
-    onRetryWorkflowRun: vi.fn<UseWorkflowCanvasStateOptions["onRetryWorkflowRun"]>().mockResolvedValue(null),
-    onCancelWorkflowRun: vi.fn<UseWorkflowCanvasStateOptions["onCancelWorkflowRun"]>().mockResolvedValue(null),
+    onSaveTemplateCanvas: vi.fn<UseWorkflowCanvasControllerOptions["onSaveTemplateCanvas"]>().mockResolvedValue(null),
+    onStartWorkflowRun: vi.fn<UseWorkflowCanvasControllerOptions["onStartWorkflowRun"]>().mockResolvedValue(null),
+    onAdvanceWorkflowRun: vi.fn<UseWorkflowCanvasControllerOptions["onAdvanceWorkflowRun"]>().mockResolvedValue(null),
+    onRetryWorkflowRun: vi.fn<UseWorkflowCanvasControllerOptions["onRetryWorkflowRun"]>().mockResolvedValue(null),
+    onCancelWorkflowRun: vi.fn<UseWorkflowCanvasControllerOptions["onCancelWorkflowRun"]>().mockResolvedValue(null),
     ...overrides
   };
 }
@@ -99,24 +108,25 @@ const projectRun = makeRun("run-project", "tpl-project", "meeting-2", [
   { nodeId: "p1", status: "running" }
 ]);
 
-function renderCanvasHook(overrides: Partial<UseWorkflowCanvasStateOptions> = {}) {
+function renderCanvasHook(overrides: Partial<UseWorkflowCanvasControllerOptions> = {}) {
   const callbacks = createCallbacks(overrides);
-  const props: UseWorkflowCanvasStateOptions = {
+  const props: UseWorkflowCanvasControllerOptions = {
     selectedMeeting: null,
     workflowTemplates: templates,
     workflowRuns: [weeklyRun, projectRun],
     ...callbacks
   };
 
-  const hook = renderHook((currentProps: UseWorkflowCanvasStateOptions) => useWorkflowCanvasState(currentProps), {
-    initialProps: props
-  });
+  const hook = renderHook(
+    (currentProps: UseWorkflowCanvasControllerOptions) => useWorkflowCanvasController(currentProps),
+    { initialProps: props }
+  );
 
   return { ...hook, callbacks, props };
 }
 
-function CanvasHarness({ options }: { options: UseWorkflowCanvasStateOptions }) {
-  const canvas = useWorkflowCanvasState(options);
+function CanvasHarness({ options }: { options: UseWorkflowCanvasControllerOptions }) {
+  const canvas = useWorkflowCanvasController(options);
 
   return (
     <div>
@@ -135,7 +145,11 @@ function CanvasHarness({ options }: { options: UseWorkflowCanvasStateOptions }) 
   );
 }
 
-describe("useWorkflowCanvasState", () => {
+describe("useWorkflowCanvasController", () => {
+  beforeEach(() => {
+    resetWorkflowStores();
+  });
+
   it("auto-matches template, run, and blocked node when meeting changes", async () => {
     const { result, rerender } = renderCanvasHook({
       selectedMeeting: makeMeeting("meeting-1", "weekly")
@@ -198,7 +212,7 @@ describe("useWorkflowCanvasState", () => {
     act(() => {
       result.current.handleNodeClick({} as ReactMouseEvent, {
         id: "n3",
-        type: "workflow",
+        type: "action",
         position: { x: 0, y: 0 },
         data: {} as WorkflowNodeData
       } satisfies Node<WorkflowNodeData>);
@@ -218,6 +232,54 @@ describe("useWorkflowCanvasState", () => {
     expect(result.current.selectedEdge?.id).toBe("edge-1");
     expect(result.current.selectedFlowNodeId).toBe("");
     expect(result.current.selectedNode).toBeNull();
+  });
+
+  it("double-clicks edge and marks condition field for focus", async () => {
+    const { result } = renderCanvasHook({
+      selectedMeeting: makeMeeting("meeting-1", "weekly")
+    });
+
+    await waitFor(() => expect(result.current.canvasEdges.length).toBe(1));
+
+    act(() => {
+      result.current.handleEdgeDoubleClick({} as ReactMouseEvent, {
+        id: "edge-1",
+        source: "n1",
+        target: "n2"
+      } satisfies Edge);
+    });
+
+    expect(result.current.selectedEdge?.id).toBe("edge-1");
+    expect(useWorkflowEditorStore.getState().focusedEdgeField).toBe("condition");
+  });
+
+  it("maps react flow node types from node kind", async () => {
+    const decisionTemplate = makeTemplate("tpl-decision", "weekly", ["d1"], []);
+    decisionTemplate.nodes[0] = makeNode("d1", { kind: "decision" });
+
+    const { result } = renderCanvasHook({
+      selectedMeeting: makeMeeting("meeting-1", "weekly"),
+      workflowTemplates: [decisionTemplate],
+      workflowRuns: []
+    });
+
+    await waitFor(() => expect(result.current.workflowNodes.length).toBe(1));
+    expect(result.current.workflowNodes[0]?.type).toBe("decision");
+  });
+
+  it("marks conditional edges with conditional class", async () => {
+    const conditionalTemplate = makeTemplate("tpl-cond", "weekly", ["n1", "n2"], [
+      { id: "edge-cond", source: "n1", target: "n2", label: "yes", condition: "status === \"approved\"" }
+    ]);
+
+    const { result } = renderCanvasHook({
+      selectedMeeting: makeMeeting("meeting-1", "weekly"),
+      workflowTemplates: [conditionalTemplate],
+      workflowRuns: []
+    });
+
+    await waitFor(() => expect(result.current.workflowEdges.length).toBe(1));
+    expect(result.current.workflowEdges[0]?.className).toContain("workflow-edge--conditional");
   });
 
   it("maps workflow node and edge visual state from the selected run", async () => {
@@ -277,6 +339,8 @@ describe("useWorkflowCanvasState", () => {
 
     expect(screen.getByTestId("node-count")).toHaveTextContent("4");
     expect(screen.getByTestId("dirty")).toHaveTextContent("yes");
+
+    resetWorkflowStores();
 
     const { result } = renderCanvasHook({
       selectedMeeting: makeMeeting("meeting-1", "weekly"),

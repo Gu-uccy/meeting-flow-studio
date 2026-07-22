@@ -1,7 +1,16 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply, preHandlerHookHandler } from "fastify";
 import bcrypt from "bcryptjs";
-import type { MeetingRecord, MeetingPermissions, PublicUser, User } from "@meeting-flow/shared";
-import { findUserByEmail, findUserById, createUser as createUserInStore } from "../userStore.js";
+import type { MeetingRecord, MeetingPermissions, PublicUser, User, UserRole } from "@meeting-flow/shared";
+import { DEFAULT_WORKSPACE_ID } from "@meeting-flow/shared";
+import { findUserByEmail, findUserById, createUser as createUserInStore, updateUserRecord } from "../userStore.js";
+import {
+  canAccessMeeting,
+  getAccessibleWorkspaceIds,
+  isPlatformAdmin,
+  resolveEffectiveRole
+} from "../lib/workspaceAccess.js";
+import { createWorkspace, loadWorkspaces } from "../workspaceStore.js";
+import { listMembershipsForUser, upsertMembership } from "../workspaceMemberStore.js";
 
 const SALT_ROUNDS = 10;
 const JWT_EXPIRES_IN = "7d";
@@ -28,6 +37,34 @@ export function signToken(app: FastifyInstance, user: PublicUser) {
   );
 }
 
+export async function toPublicUser(user: User): Promise<PublicUser> {
+  const workspaceMemberships = await listMembershipsForUser(user.id);
+  const workspaceIds =
+    workspaceMemberships.length > 0
+      ? workspaceMemberships.map((item) => item.workspaceId)
+      : (user.workspaceIds ?? [user.workspaceId || DEFAULT_WORKSPACE_ID]);
+
+  const activeWorkspaceId = workspaceIds.includes(user.workspaceId)
+    ? user.workspaceId
+    : (workspaceIds[0] ?? DEFAULT_WORKSPACE_ID);
+
+  const base: PublicUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    workspaceId: activeWorkspaceId,
+    workspaceIds,
+    workspaceMemberships,
+    effectiveRole: "viewer",
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+
+  const effectiveRole = resolveEffectiveRole(base, activeWorkspaceId) ?? "viewer";
+  return { ...base, effectiveRole };
+}
+
 export async function registerUser(
   app: FastifyInstance,
   email: string,
@@ -43,10 +80,10 @@ export async function registerUser(
 
   const passwordHash = await hashPassword(password);
   const user = await createUserInStore(normalizedEmail, name, passwordHash, "editor");
-  const publicUser = toPublicUser(user);
+  const publicUser = await toPublicUser(user);
   const token = signToken(app, publicUser);
 
-  return { user: publicUser, token };
+  return { user: publicUser, token, effectiveRole: publicUser.effectiveRole };
 }
 
 export async function loginUser(app: FastifyInstance, email: string, password: string) {
@@ -62,14 +99,37 @@ export async function loginUser(app: FastifyInstance, email: string, password: s
     throw new Error("邮箱或密码错误");
   }
 
-  const publicUser = toPublicUser(user);
+  const publicUser = await toPublicUser(user);
   const token = signToken(app, publicUser);
 
-  return { user: publicUser, token };
+  return { user: publicUser, token, effectiveRole: publicUser.effectiveRole };
 }
 
 export function buildPermissions(user: PublicUser, meeting?: MeetingRecord): MeetingPermissions {
-  if (user.role === "admin") {
+  if (meeting && !canAccessMeeting(user, meeting)) {
+    return {
+      canCreate: false,
+      canEdit: false,
+      canCancel: false,
+      canDelete: false,
+      canViewMinutes: false
+    };
+  }
+
+  const workspaceId = meeting?.workspaceId || user.workspaceId || DEFAULT_WORKSPACE_ID;
+  const effective = resolveEffectiveRole(user, workspaceId);
+
+  if (!effective) {
+    return {
+      canCreate: false,
+      canEdit: false,
+      canCancel: false,
+      canDelete: false,
+      canViewMinutes: false
+    };
+  }
+
+  if (effective === "admin") {
     return {
       canCreate: true,
       canEdit: true,
@@ -79,7 +139,7 @@ export function buildPermissions(user: PublicUser, meeting?: MeetingRecord): Mee
     };
   }
 
-  if (user.role === "viewer") {
+  if (effective === "viewer") {
     return {
       canCreate: false,
       canEdit: false,
@@ -89,26 +149,79 @@ export function buildPermissions(user: PublicUser, meeting?: MeetingRecord): Mee
     };
   }
 
-  const isOwner = meeting ? meeting.ownerUserId === user.id : false;
-
+  // editor：可维护并删除工作区内会议
   return {
     canCreate: true,
-    canEdit: isOwner,
-    canCancel: isOwner,
-    canDelete: isOwner,
+    canEdit: true,
+    canCancel: true,
+    canDelete: true,
     canViewMinutes: true
   };
 }
 
-function toPublicUser(user: User): PublicUser {
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt
+export async function switchUserWorkspace(app: FastifyInstance, userId: string, workspaceId: string) {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new Error("用户不存在");
+  }
+
+  const publicPreview = await toPublicUser(user);
+  const workspaces = await loadWorkspaces();
+  const accessibleIds = getAccessibleWorkspaceIds(publicPreview, workspaces);
+  if (!accessibleIds.includes(workspaceId)) {
+    throw new Error("当前账号无权切换到该工作区");
+  }
+
+  const updatedUser: User = {
+    ...user,
+    workspaceId,
+    workspaceIds: publicPreview.workspaceIds,
+    updatedAt: new Date().toISOString()
   };
+  await updateUserRecord(updatedUser);
+
+  const publicUser = await toPublicUser(updatedUser);
+  const token = signToken(app, publicUser);
+  return { user: publicUser, token, effectiveRole: publicUser.effectiveRole };
+}
+
+export async function createWorkspaceForUser(app: FastifyInstance, userId: string, name: string) {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new Error("用户不存在");
+  }
+
+  const publicPreview = await toPublicUser(user);
+  if (publicPreview.effectiveRole === "viewer" && !isPlatformAdmin(user)) {
+    throw new Error("当前账号无权创建工作区");
+  }
+
+  // Seed / global viewer accounts cannot create workspaces
+  if (user.role === "viewer" && !isPlatformAdmin(user)) {
+    throw new Error("当前账号无权创建工作区");
+  }
+
+  const workspace = await createWorkspace({ name });
+  await upsertMembership({
+    workspaceId: workspace.id,
+    userId: user.id,
+    role: "admin"
+  });
+
+  const memberships = await listMembershipsForUser(user.id);
+  const workspaceIds = memberships.map((item) => item.workspaceId);
+
+  const updatedUser: User = {
+    ...user,
+    workspaceId: workspace.id,
+    workspaceIds,
+    updatedAt: new Date().toISOString()
+  };
+  await updateUserRecord(updatedUser);
+
+  const publicUser = await toPublicUser(updatedUser);
+  const token = signToken(app, publicUser);
+  return { workspace, user: publicUser, token, effectiveRole: publicUser.effectiveRole };
 }
 
 export function createAuthPreHandler(): preHandlerHookHandler {
@@ -121,9 +234,13 @@ export function createAuthPreHandler(): preHandlerHookHandler {
         return reply.code(401).send({ message: "认证已失效，请重新登录" });
       }
 
-      request.user = toPublicUser(user);
+      request.user = await toPublicUser(user);
     } catch {
       return reply.code(401).send({ message: "请先登录" });
     }
   };
+}
+
+export function getSessionEffectiveRole(user: PublicUser): UserRole {
+  return resolveEffectiveRole(user, user.workspaceId) ?? "viewer";
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { buildTestApp, registerAndGetToken, createTestMeeting } from "../lib/testApp.js";
+import { buildTestApp, registerAndGetToken, registerWithRole, createTestMeeting } from "../lib/testApp.js";
 import type { FastifyInstance } from "fastify";
 import type { ProductWorkflowRun } from "@meeting-flow/shared";
 
@@ -175,5 +175,69 @@ describe("Workflows API", () => {
     expect(body.schedule).toBeDefined();
     expect(body.schedule.templateId).toBe("template-test-001");
     expect(body.schedule.cronExpression).toBe("0 9 * * 1");
+  });
+
+  describe("permission checks", () => {
+    let ownerToken: string;
+    let viewerToken: string;
+    let otherEditorToken: string;
+    let meetingId: string;
+
+    beforeAll(async () => {
+      const owner = await registerWithRole(app, "editor", undefined, "Test123456", "会议所有者");
+      ownerToken = owner.token;
+      const viewer = await registerWithRole(app, "viewer", undefined, "Test123456", "观察用户");
+      viewerToken = viewer.token;
+      const otherEditor = await registerWithRole(app, "editor", undefined, "Test123456", "其他编辑");
+      otherEditorToken = otherEditor.token;
+
+      const { meeting } = await createTestMeeting(app, ownerToken, { title: "流程权限测试" });
+      meetingId = meeting.id;
+    });
+
+    it("viewer cannot save workflow canvas", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/api/workflows/templates/template-test-001/canvas",
+        headers: { authorization: `Bearer ${viewerToken}` },
+        payload: {
+          nodes: [
+            { id: "node-1", title: "节点1", kind: "trigger", description: "", position: { x: 100, y: 100 }, owner: "system", configFields: [], inputs: [], outputs: ["event"], executor: { type: "system", label: "系统", runtime: "system", inputMapping: {}, outputMapping: {} } },
+          ],
+          edges: [],
+        },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("viewer cannot start workflow run for a meeting", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/workflows/runs",
+        headers: { authorization: `Bearer ${viewerToken}` },
+        payload: { meetingId, templateId: "template-test-001" },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("non-owner editor can start workflow run", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/workflows/runs",
+        headers: { authorization: `Bearer ${otherEditorToken}` },
+        payload: { meetingId, templateId: "template-test-001" },
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it("viewer cannot create schedules", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/workflows/schedules",
+        headers: { authorization: `Bearer ${viewerToken}` },
+        payload: { templateId: "template-test-001", cronExpression: "0 9 * * 1" },
+      });
+      expect(res.statusCode).toBe(403);
+    });
   });
 });

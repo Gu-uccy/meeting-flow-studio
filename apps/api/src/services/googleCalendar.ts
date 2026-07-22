@@ -4,7 +4,6 @@ import {
   saveIntegrationAccount,
   type IntegrationAccount
 } from "../integrationStore.js";
-import { buildMockCalendarEvent } from "./mockCalendar.js";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -186,7 +185,7 @@ export async function syncGoogleCalendarEvent(userId: string, meeting: MeetingRe
   const config = getGoogleConfig();
 
   if (!config.isConfigured) {
-    return buildMockCalendarEvent(meeting, "google");
+    throw new Error("服务端未配置 Google Calendar OAuth，无法同步日历");
   }
 
   const account = await getIntegrationAccount(userId, "google");
