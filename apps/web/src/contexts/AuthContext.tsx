@@ -1,4 +1,4 @@
-import {
+﻿import {
   createContext,
   useCallback,
   useContext,
@@ -7,19 +7,22 @@ import {
   useState,
   type ReactNode
 } from "react";
-import type { PublicUser } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import type { PublicUser, UserRole } from "@meeting-flow/shared";
+import { apiClient, readJson } from "../lib/apiClient";
 
 type AuthState = {
   user: PublicUser | null;
   token: string | null;
   isLoading: boolean;
   error: string;
+  effectiveRole: UserRole | null;
 };
 
 type AuthContextValue = AuthState & {
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string, name: string) => Promise<boolean>;
+  switchWorkspace: (workspaceId: string) => Promise<boolean>;
+  applySession: (user: PublicUser, token: string) => void;
   logout: () => void;
   clearError: () => void;
 };
@@ -40,13 +43,18 @@ function setStoredToken(token: string | null) {
   }
 }
 
+function resolveEffectiveRole(user: PublicUser | null, explicit?: UserRole): UserRole | null {
+  if (!user) return null;
+  return explicit ?? user.effectiveRole ?? user.role;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [token, setToken] = useState<string | null>(getStoredToken);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [effectiveRole, setEffectiveRole] = useState<UserRole | null>(null);
 
-  // Validate token on mount
   useEffect(() => {
     const storedToken = getStoredToken();
     if (!storedToken) {
@@ -57,18 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void apiClient("/api/auth/me")
       .then(async (response) => {
         if (response.ok) {
-          const data = (await response.json()) as { user: PublicUser };
+          const data = (await readJson(response)) as { user: PublicUser; effectiveRole?: UserRole };
           setUser(data.user);
+          setEffectiveRole(resolveEffectiveRole(data.user, data.effectiveRole));
           setStoredToken(storedToken);
-        } else {
+          return;
+        }
+
+        if (response.status === 401) {
           setStoredToken(null);
           setToken(null);
+          setEffectiveRole(null);
         }
       })
-      .catch(() => {
-        setStoredToken(null);
-        setToken(null);
-      })
+      .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -80,7 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
-      const data = (await response.json()) as { user: PublicUser; token: string };
+      const data = (await readJson(response)) as {
+        user: PublicUser;
+        token: string;
+        effectiveRole?: UserRole;
+      };
 
       if (!response.ok || !data.user || !data.token) {
         throw new Error((data as { message?: string }).message ?? "登录失败");
@@ -88,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(data.user);
       setToken(data.token);
+      setEffectiveRole(resolveEffectiveRole(data.user, data.effectiveRole));
       setStoredToken(data.token);
       return true;
     } catch (requestError) {
@@ -104,7 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: "POST",
         body: JSON.stringify({ email, password, name })
       });
-      const data = (await response.json()) as { user: PublicUser; token: string };
+      const data = (await readJson(response)) as {
+        user: PublicUser;
+        token: string;
+        effectiveRole?: UserRole;
+      };
 
       if (!response.ok || !data.user || !data.token) {
         throw new Error((data as { message?: string }).message ?? "注册失败");
@@ -112,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(data.user);
       setToken(data.token);
+      setEffectiveRole(resolveEffectiveRole(data.user, data.effectiveRole));
       setStoredToken(data.token);
       return true;
     } catch (requestError) {
@@ -120,17 +140,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const switchWorkspace = useCallback(async (workspaceId: string) => {
+    setError("");
+
+    try {
+      const response = await apiClient("/api/auth/me/workspace", {
+        method: "PATCH",
+        body: JSON.stringify({ workspaceId })
+      });
+      const data = (await readJson(response)) as {
+        user: PublicUser;
+        token: string;
+        effectiveRole?: UserRole;
+        message?: string;
+      };
+
+      if (!response.ok || !data.user || !data.token) {
+        throw new Error(data.message ?? "切换工作区失败");
+      }
+
+      setUser(data.user);
+      setToken(data.token);
+      setEffectiveRole(resolveEffectiveRole(data.user, data.effectiveRole));
+      setStoredToken(data.token);
+      return true;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "切换工作区失败");
+      return false;
+    }
+  }, []);
+
+  const applySession = useCallback((nextUser: PublicUser, nextToken: string) => {
+    setUser(nextUser);
+    setToken(nextToken);
+    setEffectiveRole(resolveEffectiveRole(nextUser));
+    setStoredToken(nextToken);
+  }, []);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
+    setEffectiveRole(null);
     setStoredToken(null);
   }, []);
 
   const clearError = useCallback(() => setError(""), []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, token, isLoading, error, login, register, logout, clearError }),
-    [user, token, isLoading, error, login, register, logout, clearError]
+    () => ({
+      user,
+      token,
+      isLoading,
+      error,
+      effectiveRole,
+      login,
+      register,
+      switchWorkspace,
+      applySession,
+      logout,
+      clearError
+    }),
+    [user, token, isLoading, error, effectiveRole, login, register, switchWorkspace, applySession, logout, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

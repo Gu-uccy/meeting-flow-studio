@@ -215,10 +215,10 @@ GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/api/integrations/google/callback
 
 当前使用 `https://www.googleapis.com/auth/calendar.events` scope，仅创建或更新由本应用同步的日历事件。参会人目前只有姓名字段，第一版会写入事件描述，不会自动发送 Google Calendar 邀请邮件。
 
-## 飞书日历接入
+## 飞书日历与视频会议接入
 
 1. 在飞书开放平台创建应用。
-2. 启用日历相关权限。
+2. 启用日历与视频会议相关权限（含录制只读）。
 3. 配置 OAuth 回调地址：
 
 ```text
@@ -232,10 +232,22 @@ FEISHU_APP_ID=
 FEISHU_APP_SECRET=
 FEISHU_REDIRECT_URI=http://127.0.0.1:8787/api/integrations/feishu/callback
 FEISHU_CALENDAR_ID=primary
-FEISHU_OAUTH_SCOPES="calendar:calendar calendar:calendar.event:create"
+FEISHU_OAUTH_SCOPES="calendar:calendar calendar:calendar.event:create vc:meeting.meetingevent:read vc:record:readonly minutes:minutes.transcript:export"
+FEISHU_VERIFICATION_TOKEN=
+# Optional. If set, encrypted event payloads are not supported yet — leave empty for local webhook.
+# FEISHU_ENCRYPT_KEY=
 ```
 
-5. 在工作台的日历接入区域点击连接飞书，授权后即可同步会议。
+5. 在工作台连接飞书并授权后：
+   - **同步飞书会议**：写入日历事件，并创建飞书视频会议（默认开启自动录制）
+   - **刷新录制状态**：会后解析 `meeting_id`、拉取录制，并尝试导出妙记转写；若纪要节点因缺录音阻塞，会自动继续
+6. （可选）在飞书开放平台配置事件订阅，请求地址：
+
+```text
+http://127.0.0.1:8787/api/integrations/feishu/events
+```
+
+订阅 `vc.meeting.recording_ready_v1`，并设置 `FEISHU_VERIFICATION_TOKEN` 与开放平台校验 Token 一致（本地建议关闭加密）。
 
 ## 本地数据
 

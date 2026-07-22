@@ -5,6 +5,7 @@ import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
 import { planMeetingAgentWorkflow, runMeetingAgent } from "../services/agent.js";
 import { getUserAiApiKey } from "../aiKeyStore.js";
+import { isLLMAvailable } from "../services/llm.js";
 import { buildWorkflowExecutionOptions } from "../lib/executionOptions.js";
 import { enqueueWorkflowRunJob } from "../services/workflowJobRunner.js";
 
@@ -21,10 +22,20 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
     const accessibleMemories = ctx.meetingMemories.filter((m) => canAccessMemory(m, request.user, ctx));
     const relatedRuns = ctx.workflowRuns.filter((r) => r.meetingId === meeting.id);
     const modelApiKey = await getUserAiApiKey(request.user.id);
+    if (!isLLMAvailable(modelApiKey)) {
+      return reply.code(503).send({ message: "未配置 AI API Key，工作流 Agent 不可用。请在账号设置中填写 OpenAI 兼容密钥，或配置 AI_API_KEY / OPENAI_API_KEY" });
+    }
 
     const agentPlan = body?.templateId
-      ? { templateId: body.templateId, rationale: "用户指定模板，Agent 跳过 AI 模板选择。", model: "user-selected", degraded: true }
-      : await planMeetingAgentWorkflow({ meeting, templates: ctx.workflowTemplates, runs: relatedRuns, memories: accessibleMemories, modelApiKey });
+      ? { templateId: body.templateId, rationale: "用户指定模板，Agent 跳过 AI 模板选择。", model: "user-selected", degraded: false }
+      : await planMeetingAgentWorkflow({
+          meeting,
+          templates: ctx.workflowTemplates,
+          runs: relatedRuns,
+          memories: accessibleMemories,
+          modelApiKey,
+          userId: request.user.id
+        });
 
     const template = ctx.workflowTemplates.find((t) => t.id === agentPlan.templateId) ?? selectWorkflowTemplate(meeting, ctx.workflowTemplates);
     if (!template) return reply.code(404).send({ message: "未找到可运行的工作流模板" });
@@ -40,6 +51,7 @@ export async function agentRoutes(app: FastifyInstance, ctx: AppContext) {
       meeting,
       plan: agentPlan,
       modelApiKey,
+      userId: request.user.id,
       selectedTemplate: template,
       executedRun: workflowRun,
       templates: ctx.workflowTemplates,
