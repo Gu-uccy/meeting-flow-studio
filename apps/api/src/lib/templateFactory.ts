@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WORKSPACE_ID,
   ensureProductWorkflowNodeExecutors,
   type MeetingType,
   type ProductWorkflowTemplate
@@ -12,6 +13,7 @@ export function createBlankWorkflowTemplate(params: {
   name: string;
   description?: string;
   category?: MeetingType;
+  workspaceId?: string;
 }): ProductWorkflowTemplate {
   const templateId = createTemplateId();
   const now = new Date().toISOString();
@@ -22,6 +24,7 @@ export function createBlankWorkflowTemplate(params: {
     description: params.description?.trim() || "新建工作流模板",
     category: params.category ?? "weekly",
     status: "draft",
+    workspaceId: params.workspaceId?.trim() || DEFAULT_WORKSPACE_ID,
     updatedAt: now,
     nodes: [
       {
@@ -56,7 +59,11 @@ export function createBlankWorkflowTemplate(params: {
   return ensureProductWorkflowNodeExecutors(template);
 }
 
-export function cloneWorkflowTemplate(source: ProductWorkflowTemplate, name?: string): ProductWorkflowTemplate {
+export function cloneWorkflowTemplate(
+  source: ProductWorkflowTemplate,
+  name?: string,
+  workspaceId?: string
+): ProductWorkflowTemplate {
   const templateId = createTemplateId();
   const now = new Date().toISOString();
   const idMap = new Map<string, string>();
@@ -85,6 +92,7 @@ export function cloneWorkflowTemplate(source: ProductWorkflowTemplate, name?: st
     id: templateId,
     name: name?.trim() || `${source.name} 副本`,
     status: "draft",
+    workspaceId: workspaceId?.trim() || source.workspaceId || DEFAULT_WORKSPACE_ID,
     updatedAt: now,
     nodes,
     edges,
@@ -92,7 +100,10 @@ export function cloneWorkflowTemplate(source: ProductWorkflowTemplate, name?: st
   });
 }
 
-export function sanitizeImportedTemplate(raw: ProductWorkflowTemplate): ProductWorkflowTemplate {
+export function sanitizeImportedTemplate(
+  raw: ProductWorkflowTemplate,
+  workspaceId?: string
+): ProductWorkflowTemplate {
   if (!raw.id || !raw.name || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) {
     throw new Error("导入模板格式无效");
   }
@@ -101,6 +112,7 @@ export function sanitizeImportedTemplate(raw: ProductWorkflowTemplate): ProductW
     ...raw,
     id: createTemplateId(),
     status: raw.status === "published" ? "draft" : raw.status ?? "draft",
+    workspaceId: workspaceId?.trim() || raw.workspaceId || DEFAULT_WORKSPACE_ID,
     updatedAt: new Date().toISOString(),
     nodes: raw.nodes,
     edges: raw.edges,

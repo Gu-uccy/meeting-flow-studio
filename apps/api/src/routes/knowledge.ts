@@ -5,6 +5,8 @@ import { buildPermissions } from "../services/auth.js";
 import { resolveEmbeddingRuntime } from "../services/embeddings.js";
 import { retrieveMeetingKnowledge } from "../services/knowledgeRetrieval.js";
 import { recordAuditLog } from "../lib/audit.js";
+import { assertMeetingAccess, assertMeetingEdit } from "../lib/permissions.js";
+import { filterMeetingsForUser } from "../lib/workspaceAccess.js";
 import { getVectorIndexStats, searchVectorKnowledge, syncVectorKnowledgeIndex } from "../vectorStore.js";
 import {
   createKnowledgeDocument,
@@ -25,6 +27,12 @@ async function resolveUserEmbedding(userId: string) {
   }
 }
 
+async function listAccessibleKnowledgeDocuments(ctx: AppContext, user: FastifyRequest["user"], meetingId?: string) {
+  const accessibleMeetingIds = new Set(filterMeetingsForUser(ctx.meetings, user).map((meeting) => meeting.id));
+  const documents = await listKnowledgeDocuments(meetingId || undefined);
+  return documents.filter((document) => accessibleMeetingIds.has(document.meetingId));
+}
+
 export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/api/knowledge/search", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
     const query = request.query as { meetingId?: string; q?: string; limit?: string };
@@ -40,6 +48,7 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!meeting) {
       return reply.code(404).send({ message: "未找到对应会议" });
     }
+    if (!assertMeetingAccess(request.user, meeting, reply)) return reply;
 
     if (!searchQuery) {
       return reply.code(400).send({ message: "请提供检索 query" });
@@ -82,6 +91,7 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!meeting) {
       return reply.code(404).send({ message: "未找到对应会议" });
     }
+    if (!assertMeetingAccess(request.user, meeting, reply)) return reply;
 
     const resolved = await resolveUserEmbedding(request.user.id);
     const result = await retrieveMeetingKnowledge(meeting, {
@@ -107,8 +117,9 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
       return reply.code(503).send({ message: resolved.error });
     }
 
-    const documents = await listKnowledgeDocuments();
-    const index = await syncVectorKnowledgeIndex(ctx.meetingMemories, ctx.meetings, documents, resolved.runtime);
+    const accessibleMeetings = filterMeetingsForUser(ctx.meetings, request.user);
+    const documents = await listAccessibleKnowledgeDocuments(ctx, request.user);
+    const index = await syncVectorKnowledgeIndex(ctx.meetingMemories, accessibleMeetings, documents, resolved.runtime);
     await recordAuditLog({
       actor: request.user,
       action: "knowledge.index_rebuild",
@@ -129,9 +140,11 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!meeting) {
         return reply.code(404).send({ message: "未找到对应会议" });
       }
+      if (!assertMeetingAccess(request.user, meeting, reply)) return reply;
+      return { items: await listKnowledgeDocuments(meetingId) };
     }
 
-    return { items: await listKnowledgeDocuments(meetingId || undefined) };
+    return { items: await listAccessibleKnowledgeDocuments(ctx, request.user) };
   });
 
   app.post("/api/knowledge/documents", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
@@ -150,11 +163,7 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!meeting) {
       return reply.code(404).send({ message: "未找到对应会议" });
     }
-
-    const permissions = buildPermissions(request.user, meeting);
-    if (!permissions.canEdit) {
-      return reply.code(403).send({ message: "当前账号无权上传知识文档" });
-    }
+    if (!assertMeetingEdit(request.user, meeting, reply, "当前账号无权上传知识文档")) return reply;
 
     const resolved = await resolveUserEmbedding(request.user.id);
     if (!resolved.runtime) {
@@ -169,8 +178,13 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
       format: body.format === "markdown" ? "markdown" : "text"
     });
 
-    const documents = await listKnowledgeDocuments();
-    await syncVectorKnowledgeIndex(ctx.meetingMemories, ctx.meetings, documents, resolved.runtime);
+    const documents = await listAccessibleKnowledgeDocuments(ctx, request.user);
+    await syncVectorKnowledgeIndex(
+      ctx.meetingMemories,
+      filterMeetingsForUser(ctx.meetings, request.user),
+      documents,
+      resolved.runtime
+    );
 
     await recordAuditLog({
       actor: request.user,
@@ -197,11 +211,7 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!meeting) {
       return reply.code(404).send({ message: "未找到对应会议" });
     }
-
-    const permissions = buildPermissions(request.user, meeting);
-    if (!permissions.canEdit) {
-      return reply.code(403).send({ message: "当前账号无权填充示例文档" });
-    }
+    if (!assertMeetingEdit(request.user, meeting, reply, "当前账号无权填充示例文档")) return reply;
 
     const created = await ensureDemoKnowledgePackForMeeting(meetingId, request.user.id);
     const items = await listKnowledgeDocuments(meetingId);
@@ -209,8 +219,13 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (created.length > 0 && resolved.runtime) {
       try {
-        const documents = await listKnowledgeDocuments();
-        await syncVectorKnowledgeIndex(ctx.meetingMemories, ctx.meetings, documents, resolved.runtime);
+        const documents = await listAccessibleKnowledgeDocuments(ctx, request.user);
+        await syncVectorKnowledgeIndex(
+          ctx.meetingMemories,
+          filterMeetingsForUser(ctx.meetings, request.user),
+          documents,
+          resolved.runtime
+        );
       } catch {
         // Demo pack should still succeed even if embeddings fail.
       }
@@ -243,18 +258,26 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: AppContext) {
     }
 
     const meeting = ctx.meetings.find((item) => item.id === document.meetingId);
-    if (meeting) {
-      const permissions = buildPermissions(request.user, meeting);
-      if (!permissions.canEdit && document.ownerUserId !== request.user.id && request.user.role !== "admin") {
-        return reply.code(403).send({ message: "当前账号无权删除该知识文档" });
-      }
+    if (!meeting) {
+      return reply.code(404).send({ message: "未找到对应会议" });
+    }
+    if (!assertMeetingAccess(request.user, meeting, reply)) return reply;
+
+    const permissions = buildPermissions(request.user, meeting);
+    if (!permissions.canEdit && document.ownerUserId !== request.user.id && request.user.role !== "admin") {
+      return reply.code(403).send({ message: "当前账号无权删除该知识文档" });
     }
 
     await deleteKnowledgeDocument(id);
     const resolved = await resolveUserEmbedding(request.user.id);
     if (resolved.runtime) {
-      const documents = await listKnowledgeDocuments();
-      await syncVectorKnowledgeIndex(ctx.meetingMemories, ctx.meetings, documents, resolved.runtime);
+      const documents = await listAccessibleKnowledgeDocuments(ctx, request.user);
+      await syncVectorKnowledgeIndex(
+        ctx.meetingMemories,
+        filterMeetingsForUser(ctx.meetings, request.user),
+        documents,
+        resolved.runtime
+      );
     }
 
     await recordAuditLog({

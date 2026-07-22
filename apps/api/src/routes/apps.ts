@@ -8,6 +8,8 @@ import {
 } from "../lib/context.js";
 import { authenticate } from "../routes/auth.js";
 import { buildPermissions } from "../services/auth.js";
+import { assertTemplateEdit, assertWorkflowEditor } from "../lib/permissions.js";
+import { filterTemplatesForUser } from "../lib/workspaceAccess.js";
 import { saveWorkflowTemplates, saveWorkflowRuns } from "../workflowStore.js";
 import { executeSingleNodeRun } from "../services/executor.js";
 import { sortRunsByStartedAtDesc } from "../lib/context.js";
@@ -17,32 +19,36 @@ import { enqueueWorkflowRunJob } from "../services/workflowJobRunner.js";
 
 export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
   // List all AI applications
-  app.get("/api/apps", { preHandler: [authenticate] }, async () => ({
-    items: buildAiApplicationsFromTemplates(ctx.workflowTemplates),
+  app.get("/api/apps", { preHandler: [authenticate] }, async (request: FastifyRequest) => ({
+    items: buildAiApplicationsFromTemplates(filterTemplatesForUser(ctx.workflowTemplates, request.user)),
   }));
 
   // Get single app
   app.get("/api/apps/:id", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
     const appId = (request.params as { id: string }).id;
-    const application = buildAiApplicationsFromTemplates(ctx.workflowTemplates).find((a) => a.id === appId);
+    const scopedTemplates = filterTemplatesForUser(ctx.workflowTemplates, request.user);
+    const application = buildAiApplicationsFromTemplates(scopedTemplates).find((a) => a.id === appId);
     if (!application) return reply.code(404).send({ message: "应用不存在" });
-    const template = ctx.workflowTemplates.find((t) => t.id === application.templateId);
+    const template = scopedTemplates.find((t) => t.id === application.templateId);
     return { application, template };
   });
 
   // App versions
   app.get("/api/apps/:id/versions", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
     const appId = (request.params as { id: string }).id;
-    const { application, node } = getNodeApplicationBinding(appId, ctx.workflowTemplates);
+    const scopedTemplates = filterTemplatesForUser(ctx.workflowTemplates, request.user);
+    const { application, node } = getNodeApplicationBinding(appId, scopedTemplates);
     if (!application || application.source !== "node" || !node) return reply.code(404).send({ message: "未找到可查看版本的节点智能体" });
     return { items: node.agentVersions ?? [] };
   });
 
   app.post("/api/apps/:id/versions", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    if (!assertWorkflowEditor(request.user, reply)) return reply;
     const appId = (request.params as { id: string }).id;
     const body = request.body as { status?: AiApplicationVersion["status"]; summary?: string };
     const { application, template, node } = getNodeApplicationBinding(appId, ctx.workflowTemplates);
     if (!application || application.source !== "node" || !template || !node) return reply.code(404).send({ message: "未找到可保存版本的节点智能体" });
+    if (!assertTemplateEdit(request.user, ensureProductWorkflowNodeExecutors(template), reply)) return reply;
 
     const status = body.status === "published" ? "published" : "snapshot";
     const summary = typeof body.summary === "string" && body.summary.trim() ? body.summary.trim().slice(0, 160) : status === "published" ? "发布当前节点智能体配置" : "保存当前节点智能体配置快照";
@@ -72,9 +78,11 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post("/api/apps/:id/versions/:versionId/apply", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    if (!assertWorkflowEditor(request.user, reply)) return reply;
     const { id: appId, versionId } = request.params as { id: string; versionId: string };
     const { application, template, node } = getNodeApplicationBinding(appId, ctx.workflowTemplates);
     if (!application || application.source !== "node" || !template || !node) return reply.code(404).send({ message: "未找到可回滚的节点智能体" });
+    if (!assertTemplateEdit(request.user, ensureProductWorkflowNodeExecutors(template), reply)) return reply;
 
     const version = (node.agentVersions ?? []).find((v) => v.id === versionId);
     if (!version) return reply.code(404).send({ message: "未找到对应的节点智能体版本" });
@@ -92,14 +100,16 @@ export async function appRoutes(app: FastifyInstance, ctx: AppContext) {
 
   // App status
   app.patch("/api/apps/:id/status", { preHandler: [authenticate] }, async (request: FastifyRequest, reply) => {
+    if (!assertWorkflowEditor(request.user, reply)) return reply;
     const appId = (request.params as { id: string }).id;
     const body = request.body as { status?: ProductWorkflowTemplate["status"] };
-    const application = buildAiApplicationsFromTemplates(ctx.workflowTemplates).find((a) => a.id === appId);
+    const application = buildAiApplicationsFromTemplates(filterTemplatesForUser(ctx.workflowTemplates, request.user)).find((a) => a.id === appId);
     if (!application) return reply.code(404).send({ message: "应用不存在" });
     if (body.status !== "draft" && body.status !== "published") return reply.code(400).send({ message: "应用状态无效" });
 
     const template = ctx.workflowTemplates.find((t) => t.id === application.templateId);
     if (!template) return reply.code(404).send({ message: "应用绑定的工作流模板不存在" });
+    if (!assertTemplateEdit(request.user, ensureProductWorkflowNodeExecutors(template), reply)) return reply;
 
     const updatedTemplate: ProductWorkflowTemplate = { ...template, status: body.status, updatedAt: new Date().toISOString() };
     ctx.workflowTemplates = ctx.workflowTemplates.map((t) => (t.id === updatedTemplate.id ? updatedTemplate : t));

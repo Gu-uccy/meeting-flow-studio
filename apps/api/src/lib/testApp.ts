@@ -34,6 +34,7 @@ const defaultTemplates: ProductWorkflowTemplate[] = [
     category: "weekly",
     description: "用于测试的基础工作流模板",
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     nodes: [
       {
         id: "node-trigger",

@@ -11,6 +11,7 @@ const advanceTemplate: ProductWorkflowTemplate = {
   description: "验证 advance 路径会合并 runtimeStore",
   category: "weekly",
   status: "published",
+  workspaceId: "workspace-default-001",
   updatedAt: "2026-06-01T03:20:00.000Z",
   nodes: [
     {

@@ -1,7 +1,7 @@
 import type { FastifyReply } from "fastify";
-import type { MeetingRecord, PublicUser } from "@meeting-flow/shared";
+import type { MeetingRecord, ProductWorkflowTemplate, PublicUser } from "@meeting-flow/shared";
 import { buildPermissions } from "../services/auth.js";
-import { canAccessMeeting, resolveEffectiveRole } from "./workspaceAccess.js";
+import { canAccessMeeting, canAccessTemplate, resolveEffectiveRole } from "./workspaceAccess.js";
 
 function deny(reply: FastifyReply, message: string): false {
   reply.code(403).send({ message });
@@ -49,4 +49,26 @@ export function assertWorkflowEditor(user: PublicUser, reply: FastifyReply, mess
     return deny(reply, message);
   }
   return true;
+}
+
+export function assertTemplateAccess(
+  user: PublicUser,
+  template: ProductWorkflowTemplate,
+  reply: FastifyReply,
+  message = "当前账号无权访问该工作区的工作流模板"
+): boolean {
+  if (!canAccessTemplate(user, template)) {
+    return deny(reply, message);
+  }
+  return true;
+}
+
+export function assertTemplateEdit(
+  user: PublicUser,
+  template: ProductWorkflowTemplate,
+  reply: FastifyReply,
+  message = "当前账号无权修改该工作流模板"
+): boolean {
+  if (!assertTemplateAccess(user, template, reply)) return false;
+  return assertWorkflowEditor(user, reply, message);
 }
