@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+import { z } from "zod";
 
 export const meetingNodeKinds = [
   "trigger",
@@ -152,19 +152,163 @@ export const userRoleLabels: Record<UserRole, string> = {
   viewer: "观察者"
 };
 
+// ── Workspace ──
+
+export const DEFAULT_WORKSPACE_ID = "workspace-default-001";
+export const TEAM_B_WORKSPACE_ID = "workspace-team-b-001";
+
+/** Per-workspace member role (same shape as platform UserRole). */
+export const workspaceMemberRoleValues = userRoleValues;
+export const workspaceMemberRoleSchema = userRoleSchema;
+export type WorkspaceMemberRole = UserRole;
+
+export const workspaceMembershipSchema = z.object({
+  workspaceId: z.string().min(1),
+  userId: z.string().min(1),
+  role: workspaceMemberRoleSchema,
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type WorkspaceMembership = z.infer<typeof workspaceMembershipSchema>;
+
+export const workspaceMembershipRefSchema = z.object({
+  workspaceId: z.string().min(1),
+  role: workspaceMemberRoleSchema
+});
+export type WorkspaceMembershipRef = z.infer<typeof workspaceMembershipRefSchema>;
+
+export const workspaceSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  createdAt: z.string(),
+  updatedAt: z.string()
+});
+export type Workspace = z.infer<typeof workspaceSchema>;
+
+export const seedWorkspaces: Workspace[] = [
+  {
+    id: DEFAULT_WORKSPACE_ID,
+    name: "默认工作区",
+    slug: "default",
+    createdAt: "2026-03-20T00:00:00.000Z",
+    updatedAt: "2026-03-20T00:00:00.000Z"
+  },
+  {
+    id: TEAM_B_WORKSPACE_ID,
+    name: "产品团队",
+    slug: "product-team",
+    createdAt: "2026-03-20T00:00:00.000Z",
+    updatedAt: "2026-03-20T00:00:00.000Z"
+  }
+];
+
+export const switchWorkspaceInputSchema = z.object({
+  workspaceId: z.string().min(1, "请选择工作区")
+});
+export type SwitchWorkspaceInput = z.infer<typeof switchWorkspaceInputSchema>;
+
+export const createWorkspaceInputSchema = z.object({
+  name: z.string().trim().min(2, "工作区名称至少 2 个字符").max(40, "工作区名称最多 40 个字符")
+});
+export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
+
+export const renameWorkspaceInputSchema = z.object({
+  name: z.string().trim().min(2, "工作区名称至少 2 个字符").max(40, "工作区名称最多 40 个字符")
+});
+export type RenameWorkspaceInput = z.infer<typeof renameWorkspaceInputSchema>;
+
+export const inviteWorkspaceMemberInputSchema = z.object({
+  email: z.string().email("请输入有效的邮箱地址"),
+  role: workspaceMemberRoleSchema.default("editor")
+});
+export type InviteWorkspaceMemberInput = z.infer<typeof inviteWorkspaceMemberInputSchema>;
+
+export const updateWorkspaceMemberInputSchema = z.object({
+  role: workspaceMemberRoleSchema
+});
+export type UpdateWorkspaceMemberInput = z.infer<typeof updateWorkspaceMemberInputSchema>;
+
+// ── Audit log ──
+
+export const auditActionValues = [
+  "meeting.create",
+  "meeting.update",
+  "meeting.status_change",
+  "meeting.delete",
+  "workflow.run_start",
+  "workflow.run_cancel",
+  "workflow.template_canvas_save",
+  "knowledge.document_create",
+  "knowledge.document_delete",
+  "knowledge.document_seed_demo",
+  "knowledge.index_rebuild",
+  "chat.message_send",
+  "chat.reset",
+  "workspace.create",
+  "workspace.rename",
+  "workspace.delete",
+  "workspace.switch",
+  "workspace.member_invite",
+  "workspace.member_remove",
+  "workspace.member_role_update"
+] as const;
+export const auditActionSchema = z.enum(auditActionValues);
+export type AuditAction = z.infer<typeof auditActionSchema>;
+
+export const auditResourceTypeValues = [
+  "meeting",
+  "workflow_run",
+  "workflow_template",
+  "knowledge_document",
+  "knowledge_index",
+  "chat",
+  "workspace"
+] as const;
+export const auditResourceTypeSchema = z.enum(auditResourceTypeValues);
+export type AuditResourceType = z.infer<typeof auditResourceTypeSchema>;
+
+export const auditLogEntrySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  actorUserId: z.string(),
+  actorName: z.string(),
+  action: auditActionSchema,
+  resourceType: auditResourceTypeSchema,
+  resourceId: z.string(),
+  summary: z.string(),
+  metadata: z.record(z.unknown()).default({}),
+  createdAt: z.string()
+});
+export type AuditLogEntry = z.infer<typeof auditLogEntrySchema>;
+
 export const userSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   name: z.string().min(1),
   passwordHash: z.string(),
   role: userRoleSchema,
+  workspaceId: z.string().default(DEFAULT_WORKSPACE_ID),
+  workspaceIds: z.array(z.string()).default([]),
   createdAt: z.string(),
   updatedAt: z.string()
 });
 export type User = z.infer<typeof userSchema>;
 
-export const publicUserSchema = userSchema.omit({ passwordHash: true });
+export const publicUserSchema = userSchema.omit({ passwordHash: true }).extend({
+  /** Memberships loaded at auth time; source of truth is workspace_members. */
+  workspaceMemberships: z.array(workspaceMembershipRefSchema).default([]),
+  /** Role relative to the user's active workspaceId (platform admin → admin). */
+  effectiveRole: userRoleSchema.default("viewer")
+});
 export type PublicUser = z.infer<typeof publicUserSchema>;
+
+export const workspaceMemberSchema = publicUserSchema.extend({
+  isActive: z.boolean(),
+  /** Role within this workspace (overrides display of global user.role in member lists). */
+  memberRole: workspaceMemberRoleSchema
+});
+export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 
 export const loginInputSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
@@ -184,7 +328,8 @@ export type RegisterInput = z.infer<typeof registerInputSchema>;
 export const meetingParticipantInputSchema = z.object({
   name: z.string().min(1, "参会人姓名不能为空"),
   role: participantRoleSchema,
-  status: participantStatusSchema
+  status: participantStatusSchema,
+  userId: z.string().optional()
 });
 
 export type MeetingParticipantInput = z.infer<typeof meetingParticipantInputSchema>;
@@ -245,6 +390,26 @@ export const meetingExternalCalendarSchema = z.object({
 
 export type MeetingExternalCalendar = z.infer<typeof meetingExternalCalendarSchema>;
 
+export const externalMeetingRecordingStatusValues = ["none", "pending", "ready", "failed"] as const;
+export const externalMeetingRecordingStatusSchema = z.enum(externalMeetingRecordingStatusValues);
+export type ExternalMeetingRecordingStatus = z.infer<typeof externalMeetingRecordingStatusSchema>;
+
+export const meetingExternalMeetingSchema = z.object({
+  provider: externalCalendarProviderSchema,
+  calendarEventId: z.string().default(""),
+  meetingUrl: z.string().default(""),
+  meetingNo: z.string().default(""),
+  meetingId: z.string().default(""),
+  recordingStatus: externalMeetingRecordingStatusSchema.default("none"),
+  transcriptStatus: externalMeetingRecordingStatusSchema.default("none"),
+  recordingUrl: z.string().default(""),
+  transcriptText: z.string().default(""),
+  lastSyncedAt: z.string().default(""),
+  statusMessage: z.string().default("")
+});
+
+export type MeetingExternalMeeting = z.infer<typeof meetingExternalMeetingSchema>;
+
 export const meetingPermissionsSchema = z.object({
   canCreate: z.boolean(),
   canEdit: z.boolean(),
@@ -288,6 +453,7 @@ export type EditableMeetingInput = z.infer<typeof editableMeetingSchema>;
 
 export const meetingRecordSchema = editableMeetingSchema.extend({
   id: z.string(),
+  workspaceId: z.string().default(DEFAULT_WORKSPACE_ID),
   ownerUserId: z.string().default(""),
   participants: z.array(meetingParticipantSchema),
   agendaItems: z.array(meetingAgendaItemSchema),
@@ -297,7 +463,8 @@ export const meetingRecordSchema = editableMeetingSchema.extend({
   createdAt: z.string(),
   updatedAt: z.string(),
   submittedAt: z.string().default(""),
-  externalCalendar: meetingExternalCalendarSchema.optional()
+  externalCalendar: meetingExternalCalendarSchema.optional(),
+  externalMeeting: meetingExternalMeetingSchema.optional()
 });
 
 export type MeetingRecord = z.infer<typeof meetingRecordSchema>;
@@ -383,6 +550,29 @@ export const meetingMemorySchema = z.object({
 });
 
 export type MeetingMemory = z.infer<typeof meetingMemorySchema>;
+
+export const meetingChatRoleValues = ["user", "assistant"] as const;
+export const meetingChatRoleSchema = z.enum(meetingChatRoleValues);
+export type MeetingChatRole = z.infer<typeof meetingChatRoleSchema>;
+
+export const meetingChatCitationSchema = z.object({
+  content: z.string(),
+  kind: z.string().optional(),
+  similarity: z.number().optional()
+});
+
+export type MeetingChatCitation = z.infer<typeof meetingChatCitationSchema>;
+
+export const meetingChatMessageSchema = z.object({
+  id: z.string(),
+  meetingId: z.string(),
+  role: meetingChatRoleSchema,
+  content: z.string(),
+  citations: z.array(meetingChatCitationSchema).default([]),
+  createdAt: z.string()
+});
+
+export type MeetingChatMessage = z.infer<typeof meetingChatMessageSchema>;
 
 export const meetingAgentActionKindValues = [
   "start_workflow",
@@ -1225,7 +1415,218 @@ const commonMeetingNodes: ProductWorkflowNode[] = [
   }
 ];
 
+const fullMeetingLifecycleNodes: ProductWorkflowNode[] = [
+  {
+    id: "intake",
+    kind: "trigger",
+    title: "会议申请触发",
+    description: "接收会议创建/排期事件，整理目标、参会人和时间窗口。",
+    position: { x: 40, y: 240 },
+    owner: "申请入口",
+    inputs: ["meetingGoal", "participants", "schedule"],
+    outputs: ["meetingRequest"],
+    configFields: [
+      { key: "event", label: "触发事件", value: "meeting.created", kind: "select" },
+      { key: "dedupe", label: "去重策略", value: "同一组织者 10 分钟内合并", kind: "text" }
+    ]
+  },
+  {
+    id: "agenda",
+    kind: "ai",
+    title: "生成会议议程",
+    description: "根据目标与参会角色生成议程草案（与知识检索并行）。",
+    position: { x: 300, y: 80 },
+    owner: "AI 编排器",
+    inputs: ["meetingRequest"],
+    outputs: ["agendaDraft", "discussionPoints", "risks"],
+    configFields: [
+      { key: "model", label: "模型", value: "claude-sonnet-4", kind: "select" },
+      { key: "prompt", label: "提示词", value: "根据会议目标、参会人和历史纪要生成一份可执行的议程草案。", kind: "textarea" },
+      { key: "temperature", label: "创造性", value: "0.3", kind: "select" }
+    ]
+  },
+  {
+    id: "context",
+    kind: "knowledge",
+    title: "检索历史上下文",
+    description: "从会议记忆与知识库召回背景材料（与议程生成并行）。",
+    position: { x: 300, y: 380 },
+    owner: "知识检索",
+    inputs: ["meetingRequest"],
+    outputs: ["contextPack", "citations"],
+    configFields: [
+      { key: "sources", label: "数据源", value: "meeting_memories,meeting_notes,knowledge_documents", kind: "textarea" },
+      { key: "maxDocs", label: "最大文档数", value: "8", kind: "text" },
+      { key: "missingPolicy", label: "缺失处理", value: "continue", kind: "select" }
+    ]
+  },
+  {
+    id: "prep",
+    kind: "ai",
+    title: "汇总会前准备清单",
+    description: "等待议程与上下文都完成后，合并生成准备清单与待确认事项。",
+    position: { x: 580, y: 240 },
+    owner: "AI 编排器",
+    inputs: ["agendaDraft", "contextPack"],
+    outputs: ["prepChecklist", "ownerAsks"],
+    configFields: [
+      { key: "model", label: "模型", value: "claude-sonnet-4", kind: "select" },
+      { key: "prompt", label: "提示词", value: "基于议程和检索上下文，生成会前准备清单与待确认问题。", kind: "textarea" },
+      { key: "temperature", label: "创造性", value: "0.2", kind: "select" }
+    ]
+  },
+  {
+    id: "policy",
+    kind: "decision",
+    title: "规则与审批判断",
+    description: "客户会/大规模会议走人工审批，其它会议自动放行。",
+    position: { x: 860, y: 240 },
+    owner: "规则引擎",
+    inputs: ["meetingRequest", "prepChecklist"],
+    outputs: ["routeDecision"],
+    configFields: [
+      { key: "condition", label: "审批条件", value: "type === client || attendeeCount > 5", kind: "textarea" },
+      { key: "approver", label: "审批人", value: "会议负责人", kind: "select" },
+      { key: "timeout", label: "超时策略", value: "30 分钟后提醒", kind: "text" }
+    ]
+  },
+  {
+    id: "notify",
+    kind: "action",
+    title: "自动放行：日历同步",
+    description: "低风险会议自动同步日历并发送会前通知。",
+    position: { x: 1140, y: 80 },
+    owner: "执行同步",
+    inputs: ["agendaDraft", "prepChecklist", "routeDecision"],
+    outputs: ["notifications", "calendarEvent"],
+    configFields: [
+      { key: "channels", label: "通知渠道", value: "邮件、IM、日历", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "google-calendar", kind: "select" },
+      { key: "retry", label: "失败重试", value: "开启", kind: "toggle" }
+    ]
+  },
+  {
+    id: "approval",
+    kind: "action",
+    title: "人工审批：负责人确认",
+    description: "高风险/客户会议进入负责人确认后再继续。",
+    position: { x: 1140, y: 380 },
+    owner: "审批人",
+    inputs: ["prepChecklist", "routeDecision"],
+    outputs: ["approvalRecord"],
+    configFields: [
+      { key: "channels", label: "通知渠道", value: "审批中心、邮件", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "approval-desk", kind: "select" },
+      { key: "retry", label: "失败重试", value: "开启", kind: "toggle" }
+    ]
+  },
+  {
+    id: "kickoff",
+    kind: "action",
+    title: "会前通知分发",
+    description: "自动放行或审批通过后汇合，统一发送议程与准备材料。",
+    position: { x: 1420, y: 240 },
+    owner: "执行同步",
+    inputs: ["agendaDraft", "prepChecklist"],
+    outputs: ["kickoffPacket"],
+    configFields: [
+      { key: "channels", label: "通知渠道", value: "邮件、IM", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "notify-pack", kind: "select" },
+      { key: "retry", label: "失败重试", value: "开启", kind: "toggle" }
+    ]
+  },
+  {
+    id: "minutes",
+    kind: "ai",
+    title: "整理纪要与决策",
+    description: "会后基于飞书录音/转写整理纪要、决策项和未决问题；录音未就绪时阻塞。",
+    position: { x: 1700, y: 240 },
+    owner: "AI 编排器",
+    inputs: ["agendaDraft", "contextPack", "meetingRequest"],
+    outputs: ["minutesDraft", "decisions", "openQuestions"],
+    configFields: [
+      { key: "model", label: "模型", value: "claude-sonnet-4", kind: "select" },
+      {
+        key: "prompt",
+        label: "提示词",
+        value: "根据会议目标、议程与会后录音/转写内容，整理纪要草稿、明确决策和下一步问题。优先依据转写事实，勿臆造会中结论。",
+        kind: "textarea"
+      },
+      { key: "temperature", label: "创造性", value: "0.2", kind: "select" },
+      { key: "requireRecording", label: "要求录音就绪", value: "开启", kind: "toggle" }
+    ]
+  },
+  {
+    id: "tasks",
+    kind: "action",
+    title: "分发行动项",
+    description: "把待办同步到任务系统并通知负责人（与记忆沉淀并行）。",
+    position: { x: 1980, y: 80 },
+    owner: "执行同步",
+    inputs: ["minutesDraft", "decisions"],
+    outputs: ["actionItems"],
+    configFields: [
+      { key: "channels", label: "通知渠道", value: "任务系统、邮件", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "task-sync", kind: "select" },
+      { key: "retry", label: "失败重试", value: "开启", kind: "toggle" }
+    ]
+  },
+  {
+    id: "memory",
+    kind: "action",
+    title: "沉淀会议记忆",
+    description: "把摘要与决策写入会议记忆库，供后续检索（与待办分发并行）。",
+    position: { x: 1980, y: 380 },
+    owner: "记忆库",
+    inputs: ["minutesDraft", "decisions"],
+    outputs: ["memoryEntries"],
+    configFields: [
+      { key: "channels", label: "通知渠道", value: "会议记忆库", kind: "textarea" },
+      { key: "toolPreset", label: "工具预设", value: "memory-sync", kind: "select" },
+      { key: "minutesSync", label: "纪要同步", value: "会议结束后自动同步", kind: "text" },
+      { key: "retry", label: "失败重试", value: "开启", kind: "toggle" }
+    ]
+  }
+];
+
+const fullMeetingLifecycleEdges = [
+  { id: "intake-agenda", source: "intake", target: "agenda", label: "并行：生成议程" },
+  { id: "intake-context", source: "intake", target: "context", label: "并行：检索上下文" },
+  { id: "agenda-prep", source: "agenda", target: "prep", label: "议程就绪" },
+  { id: "context-prep", source: "context", target: "prep", label: "上下文就绪" },
+  { id: "prep-policy", source: "prep", target: "policy", label: "准备完成" },
+  {
+    id: "policy-notify",
+    source: "policy",
+    target: "notify",
+    label: "自动放行",
+    condition: 'routeDecision === "auto_approved"'
+  },
+  {
+    id: "policy-approval",
+    source: "policy",
+    target: "approval",
+    label: "需人工审批",
+    condition: 'routeDecision === "needs_review"'
+  },
+  { id: "notify-kickoff", source: "notify", target: "kickoff", label: "已自动同步" },
+  { id: "approval-kickoff", source: "approval", target: "kickoff", label: "审批通过" },
+  { id: "kickoff-minutes", source: "kickoff", target: "minutes", label: "会后整理" },
+  { id: "minutes-tasks", source: "minutes", target: "tasks", label: "并行：分发待办" },
+  { id: "minutes-memory", source: "minutes", target: "memory", label: "并行：沉淀记忆" }
+];
+
 export const productWorkflowTemplates: ProductWorkflowTemplate[] = [
+  {
+    id: "template-meeting-lifecycle",
+    name: "会议全链路工作流",
+    description: "覆盖并行准备、条件审批分支、汇合通知与会后并行跟进，演示多数真实会议编排场景。",
+    category: "weekly",
+    status: "published",
+    updatedAt: "2026-07-18T10:40:00.000Z",
+    nodes: fullMeetingLifecycleNodes,
+    edges: fullMeetingLifecycleEdges
+  },
   {
     id: "template-weekly-sync",
     name: "周会同步工作流",
@@ -1476,7 +1877,8 @@ export const seedMeetings: MeetingRecord[] = [
     createdAt: "2026-03-27T02:00:00.000Z",
     updatedAt: "2026-03-29T08:00:00.000Z",
     submittedAt: "2026-03-27T02:05:00.000Z",
-    ownerUserId: "user-admin-001"
+    ownerUserId: "user-admin-001",
+    workspaceId: DEFAULT_WORKSPACE_ID
   },
   {
     id: "meeting-002",
@@ -1534,7 +1936,8 @@ export const seedMeetings: MeetingRecord[] = [
     createdAt: "2026-03-26T09:20:00.000Z",
     updatedAt: "2026-03-29T06:10:00.000Z",
     submittedAt: "2026-03-26T09:25:00.000Z",
-    ownerUserId: "user-admin-001"
+    ownerUserId: "user-admin-001",
+    workspaceId: DEFAULT_WORKSPACE_ID
   },
   {
     id: "meeting-003",
@@ -1585,6 +1988,7 @@ export const seedMeetings: MeetingRecord[] = [
     createdAt: "2026-03-24T03:00:00.000Z",
     updatedAt: "2026-03-28T09:00:00.000Z",
     submittedAt: "2026-03-24T03:10:00.000Z",
-    ownerUserId: "user-admin-001"
+    ownerUserId: "user-admin-001",
+    workspaceId: DEFAULT_WORKSPACE_ID
   }
 ];

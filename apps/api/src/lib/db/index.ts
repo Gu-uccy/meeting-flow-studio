@@ -1,7 +1,7 @@
 import { assertDatabaseConfig, getDatabaseConfig } from "./config.js";
 import type { DbClient } from "./client.js";
 import { createPostgresDbClient } from "./postgresClient.js";
-import { createSqliteDbClient } from "./sqliteClient.js";
+import { createSqliteDbClient, resetSharedSqliteClient } from "./sqliteClient.js";
 import { runMigrations } from "./migrations.js";
 
 let migrationPromise: Promise<void> | null = null;
@@ -35,17 +35,26 @@ async function ensureMigrations(db: DbClient) {
 
 export async function withDatabase<T>(fn: (db: DbClient) => Promise<T>) {
   const db = await createDbClient();
+  const shouldClose = db.driver === "postgres";
 
   try {
     await ensureMigrations(db);
     return await fn(db);
   } finally {
-    await db.close();
+    if (shouldClose) {
+      await db.close();
+    }
   }
 }
 
 export async function ensureDatabaseReady() {
   await withDatabase(async () => true);
+}
+
+export function resetDatabaseClients() {
+  resetSharedSqliteClient();
+  migrationPromise = null;
+  migrationKey = "";
 }
 
 export { getDatabaseConfig, assertDatabaseConfig } from "./config.js";

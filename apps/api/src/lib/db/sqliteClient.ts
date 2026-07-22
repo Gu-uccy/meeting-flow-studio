@@ -4,6 +4,8 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { DatabaseConfig } from "./config.js";
 import type { DbClient, DbRunResult, DbStatement } from "./client.js";
 
+let sharedSqliteClient: SqliteDbClient | null = null;
+
 function toSqlParams(params: unknown[]): SQLInputValue[] {
   return params as SQLInputValue[];
 }
@@ -27,7 +29,7 @@ function createSqliteStatement(database: DatabaseSync, sql: string): DbStatement
 
 export class SqliteDbClient implements DbClient {
   readonly driver = "sqlite" as const;
-  private readonly database: DatabaseSync;
+  readonly database: DatabaseSync;
 
   constructor(config: DatabaseConfig) {
     mkdirSync(path.dirname(config.sqlitePath), { recursive: true });
@@ -60,5 +62,17 @@ export class SqliteDbClient implements DbClient {
 }
 
 export function createSqliteDbClient(config: DatabaseConfig) {
-  return new SqliteDbClient(config);
+  if (!sharedSqliteClient) {
+    sharedSqliteClient = new SqliteDbClient(config);
+    sharedSqliteClient.database.exec("PRAGMA journal_mode=WAL");
+    sharedSqliteClient.database.exec("PRAGMA busy_timeout=5000");
+  }
+  return sharedSqliteClient;
+}
+
+export function resetSharedSqliteClient() {
+  if (sharedSqliteClient) {
+    sharedSqliteClient.database.close();
+    sharedSqliteClient = null;
+  }
 }

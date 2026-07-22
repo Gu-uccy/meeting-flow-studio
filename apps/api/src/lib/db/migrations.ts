@@ -45,7 +45,12 @@ CREATE TABLE IF NOT EXISTS ai_model_keys (
   user_id TEXT NOT NULL,
   provider TEXT NOT NULL,
   encrypted_key TEXT NOT NULL,
+  iv TEXT,
+  auth_tag TEXT,
   key_hint TEXT NOT NULL,
+  base_url TEXT NOT NULL DEFAULT '',
+  chat_model TEXT NOT NULL DEFAULT '',
+  embedding_model TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, provider)
@@ -96,6 +101,15 @@ CREATE TABLE IF NOT EXISTS knowledge_vector_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_vector_chunks_meeting_id ON knowledge_vector_chunks(meeting_id);
 
+CREATE TABLE IF NOT EXISTS meeting_chat_messages (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_meeting_chat_messages_meeting_id ON meeting_chat_messages(meeting_id);
+
 CREATE TABLE IF NOT EXISTS workflow_schedules (
   id TEXT PRIMARY KEY,
   template_id TEXT NOT NULL,
@@ -106,6 +120,32 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
   last_run_id TEXT,
   execution_history TEXT
 );
+
+CREATE TABLE IF NOT EXISTS workspaces (
+  id TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_members (
+  workspace_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace_id ON audit_logs(workspace_id);
 `;
 
 const POSTGRES_SCHEMA = `
@@ -152,7 +192,12 @@ CREATE TABLE IF NOT EXISTS ai_model_keys (
   user_id TEXT NOT NULL,
   provider TEXT NOT NULL,
   encrypted_key TEXT NOT NULL,
+  iv TEXT,
+  auth_tag TEXT,
   key_hint TEXT NOT NULL,
+  base_url TEXT NOT NULL DEFAULT '',
+  chat_model TEXT NOT NULL DEFAULT '',
+  embedding_model TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (user_id, provider)
@@ -203,6 +248,15 @@ CREATE TABLE IF NOT EXISTS knowledge_vector_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_vector_chunks_meeting_id ON knowledge_vector_chunks(meeting_id);
 
+CREATE TABLE IF NOT EXISTS meeting_chat_messages (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_meeting_chat_messages_meeting_id ON meeting_chat_messages(meeting_id);
+
 CREATE TABLE IF NOT EXISTS workflow_schedules (
   id TEXT PRIMARY KEY,
   template_id TEXT NOT NULL,
@@ -213,6 +267,32 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
   last_run_id TEXT,
   execution_history TEXT
 );
+
+CREATE TABLE IF NOT EXISTS workspaces (
+  id TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_members (
+  workspace_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (workspace_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace_id ON audit_logs(workspace_id);
 `;
 
 export function orderByTimestampColumn(column: string, driver: DbDriver) {
@@ -244,6 +324,24 @@ export async function runMigrations(db: DbClient) {
     }
     if (!columnNames.has("execution_history")) {
       await db.exec("ALTER TABLE workflow_schedules ADD COLUMN execution_history TEXT");
+    }
+
+    const aiKeyColumns = await db.prepare("PRAGMA table_info(ai_model_keys)").all<{ name: string }>();
+    const aiKeyColumnNames = new Set(aiKeyColumns.map((column) => column.name));
+    if (!aiKeyColumnNames.has("iv")) {
+      await db.exec("ALTER TABLE ai_model_keys ADD COLUMN iv TEXT");
+    }
+    if (!aiKeyColumnNames.has("auth_tag")) {
+      await db.exec("ALTER TABLE ai_model_keys ADD COLUMN auth_tag TEXT");
+    }
+    if (!aiKeyColumnNames.has("base_url")) {
+      await db.exec("ALTER TABLE ai_model_keys ADD COLUMN base_url TEXT NOT NULL DEFAULT ''");
+    }
+    if (!aiKeyColumnNames.has("chat_model")) {
+      await db.exec("ALTER TABLE ai_model_keys ADD COLUMN chat_model TEXT NOT NULL DEFAULT ''");
+    }
+    if (!aiKeyColumnNames.has("embedding_model")) {
+      await db.exec("ALTER TABLE ai_model_keys ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''");
     }
   }
 }
