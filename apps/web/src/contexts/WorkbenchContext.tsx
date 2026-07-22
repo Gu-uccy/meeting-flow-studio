@@ -1,24 +1,54 @@
-import {
+﻿import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode
 } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { useMeetings } from "../hooks/useMeetings";
+import {
+  canAccessNodeAgentStudio,
+  canCreateMeeting,
+  canOpenRunsConsole,
+  getDefaultWorkbenchView,
+  getPlatformRole,
+  getProductRole,
+  isMeetingReadOnly,
+  resolveWorkbenchView
+} from "../components/workbench/layout/navAccess";
 import { useGoogleCalendarIntegration } from "../hooks/useGoogleCalendarIntegration";
 import { useFeishuCalendarIntegration } from "../hooks/useFeishuCalendarIntegration";
 import { useAiSettings } from "../hooks/useAiSettings";
 import { useMeetingAgent } from "../hooks/useMeetingAgent";
 import { useMeetingMemories } from "../hooks/useMeetingMemories";
+import { useMeetingChat } from "../hooks/useMeetingChat";
 import { useWorkflowLibrary } from "../hooks/useWorkflowLibrary";
 import type { MeetingAgentRun, MeetingAgentAction, ProductWorkflowRun } from "@meeting-flow/shared";
 import type { RunsConsoleFilters } from "../lib/runsConsoleUtils";
+import {
+  buildWorkbenchPath,
+  isMeetingScopedView,
+  parseWorkbenchPath
+} from "../lib/workbenchRouting";
 
-export type WorkbenchView = "workspace" | "apps" | "account" | "runs";
+export type WorkbenchView =
+  | "workspace"
+  | "meeting"
+  | "chat"
+  | "knowledge"
+  | "memories"
+  | "meeting-agent"
+  | "config"
+  | "schedules"
+  | "apps"
+  | "account"
+  | "runs";
 
 export type RunsConsolePreset = Partial<Pick<RunsConsoleFilters, "status" | "templateId" | "meetingId" | "search">>;
 
@@ -60,6 +90,7 @@ type WorkbenchContextValue = {
   feishuCalendar: ReturnType<typeof useFeishuCalendarIntegration>;
   aiSettings: ReturnType<typeof useAiSettings>;
   memories: ReturnType<typeof useMeetingMemories>;
+  chat: ReturnType<typeof useMeetingChat>;
   agent: ReturnType<typeof useMeetingAgent> & {
     actionFeedback: string;
     executeAgentAction: (action: MeetingAgentAction) => Promise<boolean>;
@@ -93,23 +124,110 @@ type WorkbenchProviderProps = {
 export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const { user } = useAuth();
   const isEnabled = Boolean(user);
+  const userRole = getProductRole(user);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("workspace");
-  const [pendingNodeAgentKey, setPendingNodeAgentKey] = useState<string | null>(null);
+  const initialRoute = parseWorkbenchPath(location.pathname);
+  const [workbenchView, setWorkbenchViewState] = useState<WorkbenchView>(() =>
+    resolveWorkbenchView(userRole, initialRoute?.view ?? getDefaultWorkbenchView(userRole))
+  );
+  const [pendingNodeAgentKey, setPendingNodeAgentKey] = useState<string | null>(() => initialRoute?.nodeAgentKey ?? null);
   const [runsConsolePreset, setRunsConsolePreset] = useState<RunsConsolePreset | null>(null);
   const [canvasFocusRun, setCanvasFocusRun] = useState<CanvasFocusRun | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
+  const skipNextUrlSyncRef = useRef(false);
+  const pendingRouteMeetingIdRef = useRef<string | null>(initialRoute?.meetingId ?? null);
+
+  const setWorkbenchView = useCallback((view: WorkbenchView) => {
+    setWorkbenchViewState(resolveWorkbenchView(userRole, view));
+  }, [userRole]);
+
+  useEffect(() => {
+    setWorkbenchViewState((current) => resolveWorkbenchView(userRole, current));
+  }, [userRole]);
 
   const meetings = useMeetings(isEnabled);
+
+  useEffect(() => {
+    const routeMeetingId = pendingRouteMeetingIdRef.current;
+    if (!routeMeetingId || meetings.isLoading) {
+      return;
+    }
+
+    const exists = meetings.allMeetings.some((meeting) => meeting.id === routeMeetingId);
+    if (exists) {
+      meetings.setSelectedMeetingId(routeMeetingId);
+    }
+    pendingRouteMeetingIdRef.current = null;
+  }, [meetings.allMeetings, meetings.isLoading, meetings.setSelectedMeetingId]);
+
+  useEffect(() => {
+    const route = parseWorkbenchPath(location.pathname);
+    if (!route) {
+      return;
+    }
+
+    skipNextUrlSyncRef.current = true;
+    setWorkbenchViewState(resolveWorkbenchView(userRole, route.view));
+    if (route.nodeAgentKey) {
+      setPendingNodeAgentKey(route.nodeAgentKey);
+    }
+    if (route.meetingId) {
+      meetings.setSelectedMeetingId(route.meetingId);
+    }
+  }, [location.pathname, meetings.setSelectedMeetingId, userRole]);
+
+  useEffect(() => {
+    if (skipNextUrlSyncRef.current) {
+      skipNextUrlSyncRef.current = false;
+      return;
+    }
+
+    const meetingId = isMeetingScopedView(workbenchView) ? meetings.selectedMeetingId : null;
+    const nodeAgentKey = workbenchView === "apps" ? pendingNodeAgentKey : null;
+    const nextPath = buildWorkbenchPath(workbenchView, meetingId, nodeAgentKey);
+    if (location.pathname !== nextPath) {
+      navigate(nextPath, { replace: true });
+    }
+  }, [location.pathname, meetings.selectedMeetingId, navigate, pendingNodeAgentKey, workbenchView]);
+
   const aiSettings = useAiSettings(isEnabled);
   const googleCalendar = useGoogleCalendarIntegration(isEnabled, meetings.upsertMeeting);
   const feishuCalendar = useFeishuCalendarIntegration(isEnabled, meetings.upsertMeeting);
   const workflowBase = useWorkflowLibrary(isEnabled);
   const memories = useMeetingMemories(isEnabled, meetings.selectedMeeting?.id ?? "");
+  const chat = useMeetingChat(isEnabled, meetings.selectedMeeting?.id ?? "");
   const agentBase = useMeetingAgent(isEnabled, meetings.selectedMeeting?.id ?? "");
   const [agentActionFeedback, setAgentActionFeedback] = useState("");
+  const previousWorkspaceIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.workspaceId) {
+      previousWorkspaceIdRef.current = null;
+      return;
+    }
+
+    if (previousWorkspaceIdRef.current && previousWorkspaceIdRef.current !== user.workspaceId) {
+      meetings.setSelectedMeetingId(null);
+      setIsDetailOpen(false);
+      setIsCreateOpen(false);
+      setCanvasFocusRun(null);
+      void meetings.reloadMeetings();
+      void workflowBase.reloadWorkflowLibrary();
+      void memories.reloadMemories();
+    }
+
+    previousWorkspaceIdRef.current = user.workspaceId;
+  }, [
+    meetings.reloadMeetings,
+    meetings.setSelectedMeetingId,
+    memories.reloadMemories,
+    user?.workspaceId,
+    workflowBase.reloadWorkflowLibrary
+  ]);
 
   const advanceRunAndReloadMemories = useCallback(async (runId: string, resolutionNote: string) => {
     const run = await workflowBase.advanceWorkflowRun(runId, resolutionNote);
@@ -159,10 +277,15 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   }, [meetings.setSelectedMeetingId]);
 
   const openEdit = useCallback((meetingId: string) => {
+    const meeting = meetings.allMeetings.find((item) => item.id === meetingId);
+    if (isMeetingReadOnly(meeting)) {
+      return;
+    }
+
     meetings.setSelectedMeetingId(meetingId);
     setIsDetailEditing(true);
     setIsDetailOpen(true);
-  }, [meetings.setSelectedMeetingId]);
+  }, [meetings.allMeetings, meetings.setSelectedMeetingId]);
 
   const executeAgentAction = useCallback(async (action: MeetingAgentAction) => {
     if (!meetings.selectedMeeting || action.kind === "none") {
@@ -201,12 +324,12 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
         }
         case "sync_calendar": {
           const meetingId = action.payload.meetingId || meetings.selectedMeeting.id;
-          if (googleCalendar.isConfigured && googleCalendar.isConnected) {
-            await googleCalendar.syncMeeting(meetingId);
-          } else if (feishuCalendar.isConfigured && feishuCalendar.isConnected) {
+          if (feishuCalendar.isConfigured && feishuCalendar.isConnected) {
             await feishuCalendar.syncMeeting(meetingId);
-          } else {
+          } else if (googleCalendar.isConfigured && googleCalendar.isConnected) {
             await googleCalendar.syncMeeting(meetingId);
+          } else {
+            throw new Error("飞书未配置或未授权，无法同步");
           }
           setAgentActionFeedback(`已执行：${action.title}`);
           return true;
@@ -244,18 +367,26 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   }, []);
 
   const openNodeAgent = useCallback((templateId: string, nodeId: string) => {
+    if (!user || !canAccessNodeAgentStudio(getPlatformRole(user))) {
+      return;
+    }
+
     setPendingNodeAgentKey(`${templateId}-${nodeId}`);
-    setWorkbenchView("apps");
-  }, []);
+    setWorkbenchViewState("apps");
+  }, [user]);
 
   const clearPendingNodeAgent = useCallback(() => {
     setPendingNodeAgentKey(null);
   }, []);
 
   const openRunsConsole = useCallback((preset?: RunsConsolePreset) => {
+    if (!user || !canOpenRunsConsole(getProductRole(user))) {
+      return;
+    }
+
     setRunsConsolePreset(preset ?? null);
-    setWorkbenchView("runs");
-  }, []);
+    setWorkbenchViewState("runs");
+  }, [user]);
 
   const clearRunsConsolePreset = useCallback(() => {
     setRunsConsolePreset(null);
@@ -268,7 +399,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       templateId: run.templateId,
       meetingId: run.meetingId
     });
-    setWorkbenchView("workspace");
+    setWorkbenchViewState("workspace");
   }, [meetings.setSelectedMeetingId]);
 
   const clearCanvasFocusRun = useCallback(() => {
@@ -316,7 +447,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       ? "用户模型 Key"
       : aiSettings.settings.keySource === "environment"
         ? "环境模型 Key"
-        : "Mock 模型";
+        : "未配置密钥";
 
     return { todayMeetingCount, modelRuntimeLabel };
   }, [aiSettings.settings.keySource, meetings.filteredMeetings]);
@@ -324,7 +455,13 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
   const modals = useMemo(
     () => ({
       isCreateOpen,
-      openCreate: () => setIsCreateOpen(true),
+      openCreate: () => {
+        if (!canCreateMeeting(userRole)) {
+          return;
+        }
+
+        setIsCreateOpen(true);
+      },
       closeCreate: () => setIsCreateOpen(false),
       isDetailOpen,
       isDetailEditing,
@@ -335,7 +472,7 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       submitCreate,
       deleteSelectedMeeting
     }),
-    [closeDetail, deleteSelectedMeeting, isCreateOpen, isDetailEditing, isDetailOpen, openDetail, openEdit, submitCreate]
+    [closeDetail, deleteSelectedMeeting, isCreateOpen, isDetailEditing, isDetailOpen, openDetail, openEdit, submitCreate, userRole]
   );
 
   const value = useMemo<WorkbenchContextValue>(
@@ -357,11 +494,12 @@ export function WorkbenchProvider({ children }: WorkbenchProviderProps) {
       feishuCalendar,
       aiSettings,
       memories,
+      chat,
       agent,
       modals,
       derived
     }),
-    [agent, aiSettings, canvasFocusRun, clearCanvasFocusRun, clearPendingNodeAgent, clearRunsConsolePreset, derived, feishuCalendar, focusRunInCanvas, googleCalendar, meetings, memories, modals, openNodeAgent, openRunsConsole, pendingNodeAgentKey, runsConsolePreset, workflow, workbenchView]
+    [agent, aiSettings, canvasFocusRun, chat, clearCanvasFocusRun, clearPendingNodeAgent, clearRunsConsolePreset, derived, feishuCalendar, focusRunInCanvas, googleCalendar, meetings, memories, modals, openNodeAgent, openRunsConsole, pendingNodeAgentKey, runsConsolePreset, workflow, workbenchView]
   );
 
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;

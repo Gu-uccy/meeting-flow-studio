@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AiApplication } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 import type { ServiceKeyRecord } from "./useServiceApiKeys";
 
 type ServiceKeyListResponse = {
@@ -44,7 +44,7 @@ export function useServiceKeyOverview(applications: AiApplication[], isEnabled =
       const entries = await Promise.all(
         applications.map(async (application) => {
           const response = await apiClient(`/api/apps/${application.id}/service-keys`);
-          const data = (await response.json()) as Partial<ServiceKeyListResponse> & { message?: string };
+          const data = (await readJson(response)) as Partial<ServiceKeyListResponse> & { message?: string };
 
           if (!response.ok || !data.items) {
             throw new Error(data.message ?? `加载 ${application.name} 的 Service Key 失败`);
@@ -82,7 +82,7 @@ export function useServiceKeyOverview(applications: AiApplication[], isEnabled =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label })
       });
-      const data = (await response.json()) as Partial<ServiceKeyCreateResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ServiceKeyCreateResponse> & { message?: string };
 
       if (!response.ok || !data.serviceKey || !data.key) {
         throw new Error(data.message ?? "Service API Key 创建失败");
@@ -115,7 +115,7 @@ export function useServiceKeyOverview(applications: AiApplication[], isEnabled =
       const response = await apiClient(`/api/apps/${applicationId}/service-keys/${keyId}`, {
         method: "DELETE"
       });
-      const data = (await response.json()) as { message?: string };
+      const data = (await readJson(response)) as { message?: string };
 
       if (!response.ok) {
         throw new Error(data.message ?? "Service API Key 删除失败");

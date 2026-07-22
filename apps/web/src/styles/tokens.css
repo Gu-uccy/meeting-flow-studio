@@ -1,0 +1,103 @@
+:root {
+  color-scheme: light;
+  --bg: #e8eef3;
+  --bg-deep: #dbe5ec;
+  --ink: #142331;
+  --muted: #61727f;
+  --soft: #eef4f7;
+  --surface: #ffffff;
+  --surface-2: #f5f9fb;
+  --surface-glass: rgba(255, 255, 255, 0.74);
+  --line: #d4e0e6;
+  --line-strong: #b9cad3;
+  --grid-line: rgba(39, 74, 107, 0.12);
+  --teal: #2f7d86;
+  --teal-soft: #deeff0;
+  --navy: #223f63;
+  --flow-accent: #8fc0c5;
+  --green: var(--flow-accent);
+  --accent: #16364e;
+  --accent-soft: #7eb0b8;
+  --thread: rgba(47, 125, 134, 0.46);
+  --thread-soft: rgba(79, 143, 154, 0.34);
+  --thread-faint: rgba(126, 176, 184, 0.22);
+  --shadow-soft: 0 16px 36px rgba(26, 46, 63, 0.08);
+  --shadow-strong: 0 26px 58px rgba(18, 35, 50, 0.15);
+  --shadow-float: 0 20px 40px rgba(22, 45, 64, 0.16);
+  --tone-trigger: var(--flow-accent);
+  --tone-ai: #2f7d86;
+  --tone-knowledge: #4670aa;
+  --tone-decision: #b8872a;
+  --tone-action: #cc6f5f;
+  --card-border: #c3d4dc;
+  --field-height: 34px;
+  --field-padding-x: 10px;
+  --field-padding-y: 8px;
+  --field-radius: 6px;
+  --field-border: #d8dee7;
+  --field-bg: #ffffff;
+  --field-color: #111827;
+  --field-font-size: 0.78rem;
+  --field-textarea-min-height: 88px;
+  --field-border-hover: #8fc0c5;
+  --field-focus-ring: 0 0 0 2px rgba(143, 192, 197, 0.18);
+  --editor-palette-width: 112px;
+  --editor-config-width: 300px;
+  --editor-context-width: 220px;
+  --editor-dock-height: 220px;
+  --editor-toolbar-height: 48px;
+  font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif;
+}
+
+body {
+  background: radial-gradient(circle at 14% 12%, rgba(47, 125, 134, 0.11), transparent 24%),
+
+    radial-gradient(circle at 82% 18%, rgba(70, 112, 170, 0.12), transparent 26%),
+
+    linear-gradient(180deg, #f8fbfd 0%, var(--bg) 54%, var(--bg-deep) 100%);
+  color: var(--ink);
+  overflow-x: hidden;
+  position: relative;
+}
+
+body::before, body::after {
+  display: none;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+}
+
+body::before {
+  background: linear-gradient(rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0)),
+
+    repeating-linear-gradient(90deg, transparent 0 42px, rgba(39, 74, 107, 0.08) 42px 43px),
+
+    repeating-linear-gradient(0deg, transparent 0 42px, rgba(39, 74, 107, 0.07) 42px 43px);
+  inset: 32% -12% -28% -12%;
+  opacity: 0.72;
+  transform: perspective(980px) rotateX(76deg);
+  transform-origin: center top;
+  z-index: -2;
+}
+
+body::after {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0) 62%),
+
+    linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0));
+  inset: 12% auto auto 48%;
+  width: 44vw;
+  height: 44vw;
+  max-height: 780px;
+  max-width: 780px;
+  min-height: 320px;
+  min-width: 320px;
+  opacity: 0.68;
+  transform: translateX(-8%);
+  z-index: -3;
+}
+
+body:has(.retool-shell),
+body:has(.workbench-app) {
+  background: #f7f8fa;
+}

@@ -4,7 +4,7 @@ import { BrandMark } from "../common/BrandMark";
 const previewCanvas = {
   width: 660,
   height: 360,
-  nodeWidth: 160,
+  nodeWidth: 140,
   nodeHandleOffset: 8
 };
 

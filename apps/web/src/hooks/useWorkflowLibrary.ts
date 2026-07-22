@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { apiClient, getWorkflowWebSocketUrl } from "../lib/apiClient";
+import { apiClient, getWorkflowWebSocketUrl, readJson } from "../lib/apiClient";
 import type {
   AiApplication,
   AiApplicationInputField,
@@ -177,9 +177,9 @@ export function useWorkflowLibrary(isEnabled = true) {
       ]);
 
       const [templatesData, runsData, applicationsData] = (await Promise.all([
-        templatesResponse.json(),
-        runsResponse.json(),
-        applicationsResponse.json()
+        readJson(templatesResponse),
+        readJson(runsResponse),
+        readJson(applicationsResponse)
       ])) as [WorkflowTemplatesResponse, WorkflowRunsResponse, AiApplicationsResponse];
 
       if (!templatesResponse.ok) {
@@ -217,7 +217,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ meetingId, templateId })
       });
-      const data = (await response.json()) as Partial<WorkflowRunMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowRunMutationResponse> & { message?: string };
 
       if (!response.ok || !data.run) {
         throw new Error(data.message ?? "流程启动失败，请稍后重试。");
@@ -247,7 +247,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ resolutionNote })
       });
-      const data = (await response.json()) as Partial<WorkflowRunMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowRunMutationResponse> & { message?: string };
 
       if (!response.ok || !data.run) {
         throw new Error(data.message ?? "流程推进失败，请稍后重试。");
@@ -281,7 +281,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ fields })
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "节点配置保存失败，请稍后重试。");
@@ -315,7 +315,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ executor })
       });
-      const data = (await response.json()) as Partial<NodeExecutorMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<NodeExecutorMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "节点执行器保存失败，请稍后重试。");
@@ -364,7 +364,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ inputSchema, outputSchema })
       });
-      const data = (await response.json()) as Partial<ApplicationSchemaMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationSchemaMutationResponse> & { message?: string };
 
       if (!response.ok || !data.application || !data.template) {
         throw new Error(data.message ?? "节点智能体 Schema 保存失败，请稍后重试。");
@@ -403,7 +403,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify(promptConfig)
       });
-      const data = (await response.json()) as Partial<ApplicationPromptMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationPromptMutationResponse> & { message?: string };
 
       if (!response.ok || !data.application || !data.template) {
         throw new Error(data.message ?? "节点智能体 Prompt 保存失败，请稍后重试。");
@@ -446,7 +446,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ status, summary })
       });
-      const data = (await response.json()) as Partial<ApplicationVersionMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationVersionMutationResponse> & { message?: string };
 
       if (!response.ok || !data.application || !data.template || !data.version) {
         throw new Error(data.message ?? "\u8282\u70b9\u667a\u80fd\u4f53\u7248\u672c\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002");
@@ -484,7 +484,7 @@ export function useWorkflowLibrary(isEnabled = true) {
           "Content-Type": "application/json"
         }
       });
-      const data = (await response.json()) as Partial<ApplicationVersionMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationVersionMutationResponse> & { message?: string };
 
       if (!response.ok || !data.application || !data.template || !data.version) {
         throw new Error(data.message ?? "\u8282\u70b9\u667a\u80fd\u4f53\u7248\u672c\u5e94\u7528\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002");
@@ -527,7 +527,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         },
         body: JSON.stringify({ nodes, edges })
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "画布保存失败，请稍后重试。");
@@ -556,9 +556,10 @@ export function useWorkflowLibrary(isEnabled = true) {
     try {
       const response = await apiClient(`/api/workflows/runs/${runId}/retry`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
       });
-      const data = (await response.json()) as Partial<WorkflowRunMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowRunMutationResponse> & { message?: string };
 
       if (!response.ok || !data.run) {
         throw new Error(data.message ?? "流程重试失败，请稍后重试。");
@@ -585,7 +586,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
-      const data = (await response.json()) as Partial<WorkflowRunMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowRunMutationResponse> & { message?: string };
 
       if (!response.ok || !data.run) {
         throw new Error(data.message ?? "流程取消失败，请稍后重试。");
@@ -617,7 +618,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status })
       });
-      const data = (await response.json()) as Partial<ApplicationStatusMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationStatusMutationResponse> & { message?: string };
 
       if (!response.ok || !data.application || !data.template) {
         throw new Error(data.message ?? "应用状态更新失败，请稍后重试。");
@@ -654,7 +655,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputs })
       });
-      const data = (await response.json()) as Partial<ApplicationDebugMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<ApplicationDebugMutationResponse> & { message?: string };
 
       if (!response.ok || !data.run) {
         throw new Error(data.message ?? "应用调试运行失败，请稍后重试。");
@@ -685,7 +686,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name ?? "新建工作流", sourceTemplateId })
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "创建模板失败，请稍后重试。");
@@ -713,7 +714,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({})
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "复制模板失败，请稍后重试。");
@@ -737,7 +738,7 @@ export function useWorkflowLibrary(isEnabled = true) {
 
     try {
       const response = await apiClient(`/api/workflows/templates/${templateId}`, { method: "DELETE" });
-      const data = (await response.json()) as { message?: string };
+      const data = (await readJson(response)) as { message?: string };
 
       if (!response.ok) {
         throw new Error(data.message ?? "删除模板失败，请稍后重试。");
@@ -787,7 +788,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ template })
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template) {
         throw new Error(data.message ?? "导入模板失败，请稍后重试。");
@@ -825,7 +826,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, summary })
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateVersionMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateVersionMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template || !data.version) {
         throw new Error(data.message ?? "模板版本保存失败，请稍后重试。");
@@ -852,7 +853,7 @@ export function useWorkflowLibrary(isEnabled = true) {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
-      const data = (await response.json()) as Partial<WorkflowTemplateVersionMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<WorkflowTemplateVersionMutationResponse> & { message?: string };
 
       if (!response.ok || !data.template || !data.version) {
         throw new Error(data.message ?? "模板回滚失败，请稍后重试。");

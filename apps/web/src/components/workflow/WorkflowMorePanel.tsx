@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { miniDifyNodeCapabilityCatalog, type MeetingAgentRun, type MeetingRecord, type ProductWorkflowTemplate, type MeetingAgentAction } from "@meeting-flow/shared";
 import { Dropdown } from "../common/Dropdown";
+import { SelectableCardList } from "../common/SelectableCardList";
 import { useWorkflowSchedules } from "../../hooks/useWorkflowSchedules";
 import { agentActionPriorityLabels } from "./workflowPanelUtils";
 import { WorkflowSideTabs, workflowExtensionTabs, type WorkflowExtensionTab } from "./WorkflowSideTabs";
@@ -15,28 +16,24 @@ type WorkflowMorePanelProps = {
   agentError: string;
   agentActionFeedback: string;
   agentRun: MeetingAgentRun | null;
-  calendarStatusMessage: string;
   canSyncFeishuCalendar: boolean;
-  canSyncGoogleCalendar: boolean;
   feishuCalendarStatusMessage: string;
   feishuRedirectUri: string;
-  googleRedirectUri: string;
   isAgentRunning: boolean;
-  isCalendarLoading: boolean;
   isFeishuCalendarConfigured: boolean;
   isFeishuCalendarConnected: boolean;
   isFeishuCalendarLoading: boolean;
-  isGoogleCalendarConfigured: boolean;
-  isGoogleCalendarConnected: boolean;
   isWorkflowActionBusy: boolean;
   onConnectFeishuCalendar: () => void;
-  onConnectGoogleCalendar: () => void;
   onExecuteAgentAction: (action: MeetingAgentAction) => void;
+  onRefreshFeishuMeeting: () => void;
   onRunAgent: () => void;
   onSyncFeishuCalendar: () => void;
-  onSyncGoogleCalendar: () => void;
+  readOnly?: boolean;
   selectedMeeting: MeetingRecord | null;
   workflowTemplates: ProductWorkflowTemplate[];
+  forcedTab?: WorkflowExtensionTab;
+  hideTabs?: boolean;
 };
 
 export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
@@ -44,45 +41,35 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
     agentError,
     agentActionFeedback,
     agentRun,
-    calendarStatusMessage,
     canSyncFeishuCalendar,
-    canSyncGoogleCalendar,
     feishuCalendarStatusMessage,
     feishuRedirectUri,
-    googleRedirectUri,
+    forcedTab,
+    hideTabs = false,
     isAgentRunning,
-    isCalendarLoading,
     isFeishuCalendarConfigured,
     isFeishuCalendarConnected,
     isFeishuCalendarLoading,
-    isGoogleCalendarConfigured,
-    isGoogleCalendarConnected,
     isWorkflowActionBusy,
     onConnectFeishuCalendar,
-    onConnectGoogleCalendar,
     onExecuteAgentAction,
+    onRefreshFeishuMeeting,
     onRunAgent,
     onSyncFeishuCalendar,
-    onSyncGoogleCalendar,
+    readOnly = false,
     selectedMeeting,
     workflowTemplates
   } = props;
 
-  const [activeTab, setActiveTab] = useState<WorkflowExtensionTab>("agent");
+  const [internalTab, setInternalTab] = useState<WorkflowExtensionTab>("agent");
+  const activeTab = forcedTab ?? internalTab;
   const [scheduleTemplateId, setScheduleTemplateId] = useState("");
   const [scheduleMeetingId, setScheduleMeetingId] = useState("");
   const [scheduleCron, setScheduleCron] = useState<string>(cronPresets[0].value);
   const schedules = useWorkflowSchedules(true);
 
-  return (
-    <div className="workflow-support-panel workflow-support-panel--tabbed workflow-support-panel--extension" aria-label="拓展工具">
-      <WorkflowSideTabs
-        activeTab={activeTab}
-        ariaLabel="拓展工具视图"
-        onChange={setActiveTab}
-        tabs={workflowExtensionTabs}
-      />
-
+  const panelBody = (
+    <>
       {activeTab === "agent" && (
         <div className="workflow-side-panel" role="tabpanel">
           <div className="workflow-side-panel__hero">
@@ -100,71 +87,92 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
             <p className="meeting-agent-card__summary">
               {agentRun?.summary ?? "选择会议后可运行 Agent 辅助推进流程。"}
             </p>
-            <button
-              className="primary-button meeting-agent-card__button"
-              disabled={!selectedMeeting || isWorkflowActionBusy}
-              onClick={() => void onRunAgent()}
-              type="button"
-            >
-              {isAgentRunning ? "Agent 运行中" : "运行 Agent"}
-            </button>
+            {!readOnly ? (
+              <button
+                className="primary-button meeting-agent-card__button"
+                disabled={!selectedMeeting || isWorkflowActionBusy}
+                onClick={() => void onRunAgent()}
+                type="button"
+              >
+                {isAgentRunning ? "Agent 运行中" : "运行 Agent"}
+              </button>
+            ) : null}
             {agentActionFeedback ? <p className="workflow-side-panel__feedback">{agentActionFeedback}</p> : null}
-            {agentRun && agentRun.actions.length > 0 && (
-              <div className="meeting-agent-card__list">
-                {agentRun.actions.filter((action) => action.kind !== "none").slice(0, 4).map((action) => (
-                  <button
-                    className={`meeting-agent-card__item priority-${action.priority}`}
-                    disabled={isWorkflowActionBusy || action.kind === "none"}
-                    key={action.id}
-                    onClick={() => void onExecuteAgentAction(action)}
-                    type="button"
-                  >
-                    <span>{agentActionPriorityLabels[action.priority]}</span>
-                    <strong>{action.title}</strong>
-                    <small>{action.description}</small>
-                  </button>
-                ))}
-              </div>
-            )}
+            {!readOnly && agentRun && agentRun.actions.length > 0 ? (
+              <SelectableCardList
+                ariaLabel="Agent 建议动作"
+                className="meeting-agent-card__list"
+                items={agentRun.actions
+                  .filter((action) => action.kind !== "none")
+                  .slice(0, 4)
+                  .map((action) => ({
+                    id: action.id,
+                    title: action.title,
+                    badge: agentActionPriorityLabels[action.priority],
+                    description: action.description,
+                    className: `selectable-card--badge-leading priority-${action.priority}`,
+                    disabled: isWorkflowActionBusy || action.kind === "none"
+                  }))}
+                layout="stack"
+                onSelect={(id) => {
+                  const action = agentRun.actions.find((item) => item.id === id);
+                  if (action) {
+                    void onExecuteAgentAction(action);
+                  }
+                }}
+              />
+            ) : null}
           </section>
         </div>
       )}
 
-      {activeTab === "calendar" && (
+      {activeTab === "config" && (
         <div className="workflow-side-panel" role="tabpanel">
           <div className="workflow-side-panel__hero">
             <span className="section-kicker">拓展工具</span>
-            <strong>日历同步</strong>
-            <p>将会议同步到 Google 或飞书日历。</p>
+            <strong>飞书会议</strong>
+            <p>同步日程、绑定飞书视频会议，并在会后刷新录制状态。</p>
           </div>
 
           {selectedMeeting ? (
-            <section className="calendar-integration-card workflow-side-panel__section" aria-label="日历同步">
+            <section className="calendar-integration-card workflow-side-panel__section" aria-label="飞书同步">
               <div>
-                <span>日历同步</span>
-                <strong>Google / 飞书</strong>
-                <p>{calendarStatusMessage || feishuCalendarStatusMessage || "将会议同步到外部日历。"}</p>
+                <span>飞书同步</span>
+                <strong>飞书日历与视频会议</strong>
+                <p>{feishuCalendarStatusMessage || "将会议同步到飞书日历与视频会议。"}</p>
+                {selectedMeeting.externalMeeting?.provider === "feishu" ? (
+                  <p>
+                    录制：{selectedMeeting.externalMeeting.recordingStatus}
+                    {selectedMeeting.externalMeeting.statusMessage
+                      ? ` · ${selectedMeeting.externalMeeting.statusMessage}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
               <div className="calendar-integration-card__actions">
-                <button className="ghost-button" disabled={isWorkflowActionBusy || isCalendarLoading || !canSyncGoogleCalendar} onClick={() => void onSyncGoogleCalendar()} type="button">同步 Google</button>
-                <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onSyncFeishuCalendar()} type="button">同步飞书</button>
+                {!readOnly ? (
+                  <>
+                    <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onSyncFeishuCalendar()} type="button">同步飞书会议</button>
+                    <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onRefreshFeishuMeeting()} type="button">刷新录制状态</button>
+                  </>
+                ) : null}
               </div>
+              {!readOnly ? (
               <details className="workflow-side-panel__dev">
                 <summary>连接配置</summary>
                 <div className="calendar-integration-card__actions">
-                  <button className="ghost-button" disabled={isWorkflowActionBusy || isCalendarLoading || !isGoogleCalendarConfigured || isGoogleCalendarConnected} onClick={() => void onConnectGoogleCalendar()} type="button">连接 Google</button>
                   <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !isFeishuCalendarConfigured || isFeishuCalendarConnected} onClick={() => void onConnectFeishuCalendar()} type="button">连接飞书</button>
                 </div>
-                {(googleRedirectUri || feishuRedirectUri) && (
+                {feishuRedirectUri && (
                   <div className="workflow-side-panel__dev-meta">
-                    {googleRedirectUri && <code>Google: {googleRedirectUri}</code>}
-                    {feishuRedirectUri && <code>Feishu: {feishuRedirectUri}</code>}
+                    <code>Feishu: {feishuRedirectUri}</code>
                   </div>
                 )}
               </details>
+              ) : null}
             </section>
           ) : (
-            <p className="memory-empty">请先从左侧选择一场会议，再同步日历。</p>
+            <p className="memory-empty">请先从顶栏选择一场会议，再同步日历。</p>
           )}
         </div>
       )}
@@ -177,6 +185,7 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
             <p>按 Cron 表达式自动启动工作流。</p>
           </div>
 
+          {!readOnly ? (
           <section className="workflow-side-panel__section" aria-label="创建定时任务">
             <div className="ide-section-title">
               <strong>新建计划</strong>
@@ -237,29 +246,31 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
             {schedules.error ? <p className="memory-empty">{schedules.error}</p> : null}
             {schedules.feedback ? <p className="workflow-side-panel__feedback">{schedules.feedback}</p> : null}
           </section>
+          ) : null}
 
           <section className="workflow-side-panel__section" aria-label="定时任务列表">
             <div className="ide-section-title">
               <strong>已创建任务</strong>
             </div>
-            {schedules.items.length === 0 ? (
-              <p className="memory-empty">暂无定时任务。</p>
-            ) : (
-              schedules.items.map((schedule) => {
+            <SelectableCardList
+              ariaLabel="定时任务"
+              empty={<p className="memory-empty">暂无定时任务。</p>}
+              items={schedules.items.map((schedule) => {
                 const template = workflowTemplates.find((item) => item.id === schedule.templateId);
                 const latestHistory = schedule.executionHistory?.[0];
-                return (
-                  <article className="workflow-side-panel__card workflow-side-panel__card--schedule" key={schedule.id}>
-                    <div className="workflow-side-panel__card-body">
-                      <strong>{template?.name ?? schedule.templateId}</strong>
-                      <small>
-                        {schedule.cronExpression}
-                        {schedule.meetingId ? ` · 会议 ${schedule.meetingId}` : ""}
-                        {schedule.lastTriggeredAt ? ` · 上次 ${new Date(schedule.lastTriggeredAt).toLocaleString("zh-CN")}` : ""}
-                        {latestHistory ? ` · 最近运行 ${latestHistory.status}` : ""}
-                      </small>
-                    </div>
-                    <div className="workflow-side-panel__card-actions">
+                return {
+                  id: schedule.id,
+                  title: template?.name ?? schedule.templateId,
+                  description: [
+                    schedule.cronExpression,
+                    schedule.meetingId ? `会议 ${schedule.meetingId}` : null,
+                    schedule.lastTriggeredAt ? `上次 ${new Date(schedule.lastTriggeredAt).toLocaleString("zh-CN")}` : null,
+                    latestHistory ? `最近运行 ${latestHistory.status}` : null
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  actions: !readOnly ? (
+                    <>
                       <button
                         className="ghost-button"
                         disabled={isWorkflowActionBusy || schedules.isMutating}
@@ -276,11 +287,12 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
                       >
                         删除
                       </button>
-                    </div>
-                  </article>
-                );
-              })
-            )}
+                    </>
+                  ) : undefined
+                };
+              })}
+              layout="stack"
+            />
           </section>
         </div>
       )}
@@ -294,20 +306,37 @@ export function WorkflowMorePanel(props: WorkflowMorePanelProps) {
           </div>
 
           <section className="workflow-side-panel__section node-capability-catalog" aria-label="节点能力矩阵">
-            {miniDifyNodeCapabilityCatalog.map((capability) => (
-              <article className={`node-capability-card node-capability--${capability.maturity}`} key={capability.kind}>
-                <div className="node-capability-card__head">
-                  <strong>{capability.name}</strong>
-                  <span>{capability.difyLikeName}</span>
-                </div>
-                <p>{capability.purpose}</p>
-                <small>配置：{capability.requiredConfig.join(" · ")}</small>
-                <small>输出：{capability.runtimeOutput.join(" · ")}</small>
-              </article>
-            ))}
+            <SelectableCardList
+              ariaLabel="节点能力"
+              items={miniDifyNodeCapabilityCatalog.map((capability) => ({
+                id: capability.kind,
+                title: capability.name,
+                badge: capability.difyLikeName,
+                description: capability.purpose,
+                meta: `配置：${capability.requiredConfig.join(" · ")} · 输出：${capability.runtimeOutput.join(" · ")}`,
+                className: `node-capability--${capability.maturity}`
+              }))}
+              layout="stack"
+            />
           </section>
         </div>
       )}
+    </>
+  );
+
+  if (hideTabs) {
+    return panelBody;
+  }
+
+  return (
+    <div className="workflow-support-panel workflow-support-panel--tabbed workflow-support-panel--extension" aria-label="拓展工具">
+      <WorkflowSideTabs
+        activeTab={activeTab}
+        ariaLabel="拓展工具视图"
+        onChange={setInternalTab}
+        tabs={workflowExtensionTabs}
+      />
+      {panelBody}
     </div>
   );
 }

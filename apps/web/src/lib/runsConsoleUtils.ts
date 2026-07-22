@@ -10,6 +10,7 @@ export type RunsConsoleFilters = {
   templateId: string;
   meetingId: string;
   search: string;
+  ownerScope: "all" | "mine";
 };
 
 export type RunsConsoleStats = {
@@ -34,14 +35,26 @@ export function buildRunsConsoleStats(runs: ProductWorkflowRun[]): RunsConsoleSt
 
 export function filterRunsConsole(
   runs: ProductWorkflowRun[],
-  filters: RunsConsoleFilters
+  filters: RunsConsoleFilters,
+  options?: {
+    meetings?: MeetingRecord[];
+    ownerUserId?: string;
+  }
 ) {
   const search = filters.search.trim().toLowerCase();
+  const ownedMeetingIds = filters.ownerScope === "mine" && options?.ownerUserId
+    ? new Set(
+      (options.meetings ?? [])
+        .filter((meeting) => meeting.ownerUserId === options.ownerUserId)
+        .map((meeting) => meeting.id)
+    )
+    : null;
 
   return runs
     .filter((run) => (filters.status === "all" ? true : run.status === filters.status))
     .filter((run) => (filters.templateId ? run.templateId === filters.templateId : true))
     .filter((run) => (filters.meetingId ? run.meetingId === filters.meetingId : true))
+    .filter((run) => (ownedMeetingIds ? ownedMeetingIds.has(run.meetingId) : true))
     .filter((run) => {
       if (!search) return true;
       return run.name.toLowerCase().includes(search) || run.id.toLowerCase().includes(search);

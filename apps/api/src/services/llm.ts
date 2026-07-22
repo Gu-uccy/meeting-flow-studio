@@ -1,47 +1,52 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { AiApplicationOutputField, AiApplicationPromptConfig, ProductWorkflowNode, MeetingRecord } from "@meeting-flow/shared";
-import { buildAnthropicJsonSchema } from "./structuredOutput.js";
+import {
+  assertAiServiceConfigured,
+  getEnvironmentAiDefaults,
+  normalizeAiBaseUrl,
+  resolveAiServiceConfig,
+  type AiServiceConfig
+} from "./aiServiceConfig.js";
+import {
+  buildStructuredOutputSchemaPrompt,
+  extractJsonObject
+} from "./structuredOutput.js";
 
-let client: Anthropic | null = null;
-
-function getClient(apiKeyOverride?: string): Anthropic | null {
-  if (apiKeyOverride) {
-    return new Anthropic({ apiKey: apiKeyOverride });
-  }
-
-  if (client) {
-    return client;
-  }
-
-  const apiKey = process.env["ANTHROPIC_API_KEY"];
-  if (!apiKey) {
-    return null;
-  }
-
-  client = new Anthropic({ apiKey });
-  return client;
-}
-
-export function isLLMAvailable(apiKeyOverride?: string) {
-  return getClient(apiKeyOverride) !== null;
-}
-
-const MODEL_MAP: Record<string, string> = {
-  "会议议程助手": "claude-sonnet-4-20250514",
-  "claude-sonnet-4": "claude-sonnet-4-20250514",
-  "claude-opus-4": "claude-opus-4-20250514",
-  "claude-haiku-3": "claude-haiku-3-20240307"
+export type LLMCallResult = {
+  content: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
 };
 
-function resolveModel(friendlyName: string): string {
-  return MODEL_MAP[friendlyName] ?? friendlyName;
-}
+const MODEL_MAP: Record<string, string> = {
+  "会议议程助手": "gpt-4o-mini",
+  "claude-sonnet-4": "gpt-4o-mini",
+  "claude-sonnet-4-20250514": "gpt-4o-mini",
+  "claude-opus-4": "gpt-4o",
+  "claude-opus-4-20250514": "gpt-4o",
+  "claude-haiku-3": "gpt-4o-mini",
+  "claude-haiku-3-20240307": "gpt-4o-mini"
+};
 
 const TEMP_MAP: Record<string, number> = {
   "低": 0.1,
   "中": 0.5,
   "高": 0.9
 };
+
+function resolveModel(friendlyName: string, fallback: string): string {
+  const trimmed = friendlyName.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  if (MODEL_MAP[trimmed]) {
+    return MODEL_MAP[trimmed]!;
+  }
+  if (trimmed.startsWith("claude")) {
+    return fallback;
+  }
+  return trimmed;
+}
 
 function resolveTemperature(label: string): number {
   const num = Number(label);
@@ -51,12 +56,134 @@ function resolveTemperature(label: string): number {
   return TEMP_MAP[label] ?? 0.5;
 }
 
-export type LLMCallResult = {
-  content: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
+export function isLLMAvailable(apiKeyOverride?: string) {
+  if (apiKeyOverride?.trim()) {
+    return true;
+  }
+  return Boolean(getEnvironmentAiDefaults().apiKey);
+}
+
+async function resolveRuntime(params?: { apiKey?: string; baseUrl?: string; chatModel?: string; userId?: string }) {
+  const resolved = await resolveAiServiceConfig(params?.userId);
+  const apiKey = params?.apiKey?.trim() || resolved.apiKey;
+  const config: AiServiceConfig = {
+    ...resolved,
+    apiKey,
+    baseUrl: normalizeAiBaseUrl(params?.baseUrl || resolved.baseUrl),
+    chatModel: params?.chatModel?.trim() || resolved.chatModel,
+    keySource: params?.apiKey?.trim() ? (resolved.keySource === "none" ? "user" : resolved.keySource) : resolved.keySource
+  };
+  assertAiServiceConfigured(config, "AI 能力");
+  return config;
+}
+
+type ChatCompletionResponse = {
+  choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+  model?: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  error?: { message?: string };
 };
+
+function extractChatContent(payload: ChatCompletionResponse) {
+  const content = payload.choices?.[0]?.message?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part.text === "string" ? part.text : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+const LLM_FETCH_TIMEOUT_MS = 12_000;
+
+function createTimeoutError(timeoutMs: number) {
+  return new Error(`AI 请求超时（${timeoutMs}ms）`);
+}
+
+async function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs = LLM_FETCH_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      work(controller.signal),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(createTimeoutError(timeoutMs));
+        }, timeoutMs);
+      })
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted || (error instanceof Error && error.message.includes("超时"))) {
+      throw createTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export function isLlmTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.name === "AbortError" || error.name === "TimeoutError") {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("超时") || message.includes("timeout") || message.includes("aborted");
+}
+
+async function createChatCompletion(params: {
+  config: AiServiceConfig;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  systemPrompt?: string;
+  prompt: string;
+  jsonObject?: boolean;
+}) {
+  const messages: Array<{ role: "system" | "user"; content: string }> = [];
+  if (params.systemPrompt?.trim()) {
+    messages.push({ role: "system", content: params.systemPrompt.trim() });
+  }
+  messages.push({ role: "user", content: params.prompt });
+
+  return withTimeout(async (signal) => {
+    const response = await fetch(`${params.config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${params.config.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: params.model,
+        temperature: params.temperature,
+        max_tokens: params.maxTokens,
+        messages,
+        ...(params.jsonObject ? { response_format: { type: "json_object" } } : {})
+      }),
+      signal
+    });
+
+    const payload = (await response.json()) as ChatCompletionResponse;
+    if (!response.ok) {
+      throw new Error(payload.error?.message || `AI Chat 调用失败：${response.status} ${response.statusText}`);
+    }
+
+    return {
+      content: extractChatContent(payload),
+      model: payload.model ?? params.model,
+      inputTokens: payload.usage?.prompt_tokens ?? 0,
+      outputTokens: payload.usage?.completion_tokens ?? 0
+    };
+  });
+}
 
 export async function callLLM(params: {
   model: string;
@@ -65,35 +192,22 @@ export async function callLLM(params: {
   temperature?: string | number;
   maxTokens?: number;
   apiKey?: string;
+  baseUrl?: string;
+  userId?: string;
 }): Promise<LLMCallResult> {
-  const anthropic = getClient(params.apiKey);
-  if (!anthropic) {
-    throw new Error("ANTHROPIC_API_KEY not configured");
-  }
-
-  const model = resolveModel(params.model);
+  const config = await resolveRuntime(params);
+  const model = resolveModel(params.model, config.chatModel);
   const temperature = resolveTemperature(String(params.temperature ?? 0.5));
   const maxTokens = params.maxTokens ?? 1024;
 
-  const response = await anthropic.messages.create({
+  return createChatCompletion({
+    config,
     model,
-    max_tokens: maxTokens,
     temperature,
-    ...(params.systemPrompt?.trim() ? { system: params.systemPrompt } : {}),
-    messages: [{ role: "user", content: params.prompt }]
+    maxTokens,
+    systemPrompt: params.systemPrompt,
+    prompt: params.prompt
   });
-
-  const content = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => (block as { text: string }).text)
-    .join("\n");
-
-  return {
-    content,
-    model: response.model,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens
-  };
 }
 
 export async function callLLMWithStructuredOutput(params: {
@@ -103,52 +217,38 @@ export async function callLLMWithStructuredOutput(params: {
   temperature?: string | number;
   maxTokens?: number;
   apiKey?: string;
+  baseUrl?: string;
+  userId?: string;
   outputSchema: AiApplicationOutputField[];
 }): Promise<LLMCallResult & { structuredOutput: Record<string, unknown> }> {
-  const anthropic = getClient(params.apiKey);
-  if (!anthropic) {
-    throw new Error("ANTHROPIC_API_KEY not configured");
-  }
-
   if (params.outputSchema.length === 0) {
     const result = await callLLM(params);
     return { ...result, structuredOutput: {} };
   }
 
-  const model = resolveModel(params.model);
+  const config = await resolveRuntime(params);
+  const model = resolveModel(params.model, config.chatModel);
   const temperature = resolveTemperature(String(params.temperature ?? 0.5));
   const maxTokens = params.maxTokens ?? 1024;
+  const schemaPrompt = buildStructuredOutputSchemaPrompt(params.outputSchema);
 
-  const response = await anthropic.messages.create({
+  const result = await createChatCompletion({
+    config,
     model,
-    max_tokens: maxTokens,
     temperature,
-    ...(params.systemPrompt?.trim() ? { system: params.systemPrompt } : {}),
-    messages: [{ role: "user", content: params.prompt }],
-    output_format: {
-      type: "json_schema",
-      schema: buildAnthropicJsonSchema(params.outputSchema)
-    }
-  } as Parameters<typeof anthropic.messages.create>[0]);
+    maxTokens,
+    systemPrompt: [params.systemPrompt?.trim(), schemaPrompt].filter(Boolean).join("\n\n"),
+    prompt: params.prompt,
+    jsonObject: true
+  });
 
-  const message = response as Anthropic.Message;
-  const content = message.content
-    .filter((block: Anthropic.ContentBlock) => block.type === "text")
-    .map((block) => (block as Anthropic.TextBlock).text)
-    .join("\n");
-
-  let structuredOutput: Record<string, unknown> = {};
-  try {
-    structuredOutput = JSON.parse(content) as Record<string, unknown>;
-  } catch {
+  const structuredOutput = extractJsonObject(result.content);
+  if (!structuredOutput) {
     throw new Error("模型未返回合法 JSON Schema 输出");
   }
 
   return {
-    content,
-    model: message.model,
-    inputTokens: message.usage.input_tokens,
-    outputTokens: message.usage.output_tokens,
+    ...result,
     structuredOutput
   };
 }
@@ -166,6 +266,9 @@ export function buildAINodePrompt(
     goal: string;
     attendees: string[];
     agendaItems: string[];
+    recordingTranscript?: string;
+    recordingUrl?: string;
+    recordingStatus?: string;
   }
 ): string {
   const basePrompt = nodeConfig["prompt"] ?? "请根据以下会议信息生成内容。";
@@ -178,7 +281,6 @@ export function buildAINodePrompt(
   prompt = prompt.replace(/\{agendaCount\}/g, String(meetingContext.agendaItems.length));
   prompt = prompt.replace(/\{attendeeCount\}/g, String(meetingContext.attendees.length));
 
-  // Add meeting context if not already in the prompt
   if (!prompt.includes(meetingContext.title)) {
     prompt = [
       `会议标题：${meetingContext.title}`,
@@ -190,6 +292,12 @@ export function buildAINodePrompt(
     ].join("\n");
   }
 
+  if (meetingContext.recordingTranscript?.trim()) {
+    prompt = `${prompt}\n\n会后转写：\n${meetingContext.recordingTranscript.trim()}`;
+  } else if (meetingContext.recordingUrl?.trim()) {
+    prompt = `${prompt}\n\n飞书录音链接：${meetingContext.recordingUrl.trim()}\n（录音状态：${meetingContext.recordingStatus ?? "ready"}；请基于会前材料整理，勿臆造未出现的会中结论。）`;
+  }
+
   return prompt;
 }
 
@@ -198,7 +306,10 @@ export function buildMeetingContext(meeting: MeetingRecord) {
     title: meeting.title,
     goal: meeting.meetingGoal,
     attendees: meeting.participants.map((p) => p.name),
-    agendaItems: meeting.agendaItems.map((a) => a.title)
+    agendaItems: meeting.agendaItems.map((a) => a.title),
+    recordingTranscript: meeting.externalMeeting?.transcriptText ?? "",
+    recordingUrl: meeting.externalMeeting?.recordingUrl ?? "",
+    recordingStatus: meeting.externalMeeting?.recordingStatus ?? "none"
   };
 }
 

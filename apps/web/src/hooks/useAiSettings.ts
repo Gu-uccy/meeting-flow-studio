@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 export type AiSettings = {
-  provider: "anthropic";
+  provider: "openai-compatible";
   isUserConfigured: boolean;
   isEnvironmentConfigured: boolean;
   keySource: "user" | "environment" | "none";
   keyHint: string;
+  baseUrl: string;
+  chatModel: string;
+  embeddingModel: string;
   updatedAt: string;
 };
 
@@ -16,11 +19,14 @@ type AiSettingsResponse = {
 };
 
 const emptySettings: AiSettings = {
-  provider: "anthropic",
+  provider: "openai-compatible",
   isUserConfigured: false,
   isEnvironmentConfigured: false,
   keySource: "none",
   keyHint: "",
+  baseUrl: "https://api.openai.com/v1",
+  chatModel: "gpt-4o-mini",
+  embeddingModel: "text-embedding-3-small",
   updatedAt: ""
 };
 
@@ -31,6 +37,9 @@ function parseErrorMessage(fallback: string, value: unknown) {
 export function useAiSettings(isEnabled = true) {
   const [settings, setSettings] = useState<AiSettings>(emptySettings);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [baseUrlDraft, setBaseUrlDraft] = useState(emptySettings.baseUrl);
+  const [chatModelDraft, setChatModelDraft] = useState(emptySettings.chatModel);
+  const [embeddingModelDraft, setEmbeddingModelDraft] = useState(emptySettings.embeddingModel);
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -40,6 +49,9 @@ export function useAiSettings(isEnabled = true) {
     if (!isEnabled) {
       setSettings(emptySettings);
       setApiKeyDraft("");
+      setBaseUrlDraft(emptySettings.baseUrl);
+      setChatModelDraft(emptySettings.chatModel);
+      setEmbeddingModelDraft(emptySettings.embeddingModel);
       setError("");
       setFeedback("");
       return;
@@ -50,13 +62,16 @@ export function useAiSettings(isEnabled = true) {
 
     try {
       const response = await apiClient("/api/ai/settings");
-      const data = (await response.json()) as Partial<AiSettingsResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<AiSettingsResponse> & { message?: string };
 
       if (!response.ok || !data.settings) {
         throw new Error(data.message ?? "AI 设置加载失败，请稍后重试。");
       }
 
       setSettings(data.settings);
+      setBaseUrlDraft(data.settings.baseUrl || emptySettings.baseUrl);
+      setChatModelDraft(data.settings.chatModel || emptySettings.chatModel);
+      setEmbeddingModelDraft(data.settings.embeddingModel || emptySettings.embeddingModel);
     } catch (requestError) {
       setError(parseErrorMessage("AI 设置加载失败，请稍后重试。", requestError));
     } finally {
@@ -72,25 +87,33 @@ export function useAiSettings(isEnabled = true) {
     try {
       const response = await apiClient("/api/ai/settings", {
         method: "PUT",
-        body: JSON.stringify({ apiKey: apiKeyDraft })
+        body: JSON.stringify({
+          apiKey: apiKeyDraft,
+          baseUrl: baseUrlDraft,
+          chatModel: chatModelDraft,
+          embeddingModel: embeddingModelDraft
+        })
       });
-      const data = (await response.json()) as Partial<AiSettingsResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<AiSettingsResponse> & { message?: string };
 
       if (!response.ok || !data.settings) {
-        throw new Error(data.message ?? "AI API Key 保存失败，请检查后重试。");
+        throw new Error(data.message ?? "AI 服务配置保存失败，请检查后重试。");
       }
 
       setSettings(data.settings);
       setApiKeyDraft("");
-      setFeedback(data.message ?? "AI API Key 已保存。");
+      setBaseUrlDraft(data.settings.baseUrl || emptySettings.baseUrl);
+      setChatModelDraft(data.settings.chatModel || emptySettings.chatModel);
+      setEmbeddingModelDraft(data.settings.embeddingModel || emptySettings.embeddingModel);
+      setFeedback(data.message ?? "AI 服务配置已保存。");
       return true;
     } catch (requestError) {
-      setError(parseErrorMessage("AI API Key 保存失败，请检查后重试。", requestError));
+      setError(parseErrorMessage("AI 服务配置保存失败，请检查后重试。", requestError));
       return false;
     } finally {
       setIsMutating(false);
     }
-  }, [apiKeyDraft]);
+  }, [apiKeyDraft, baseUrlDraft, chatModelDraft, embeddingModelDraft]);
 
   const deleteApiKey = useCallback(async () => {
     setIsMutating(true);
@@ -101,18 +124,21 @@ export function useAiSettings(isEnabled = true) {
       const response = await apiClient("/api/ai/settings", {
         method: "DELETE"
       });
-      const data = (await response.json()) as Partial<AiSettingsResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<AiSettingsResponse> & { message?: string };
 
       if (!response.ok || !data.settings) {
-        throw new Error(data.message ?? "AI API Key 删除失败，请稍后重试。");
+        throw new Error(data.message ?? "AI 服务配置删除失败，请稍后重试。");
       }
 
       setSettings(data.settings);
       setApiKeyDraft("");
-      setFeedback(data.message ?? "AI API Key 已删除。");
+      setBaseUrlDraft(data.settings.baseUrl || emptySettings.baseUrl);
+      setChatModelDraft(data.settings.chatModel || emptySettings.chatModel);
+      setEmbeddingModelDraft(data.settings.embeddingModel || emptySettings.embeddingModel);
+      setFeedback(data.message ?? "AI 服务配置已删除。");
       return true;
     } catch (requestError) {
-      setError(parseErrorMessage("AI API Key 删除失败，请稍后重试。", requestError));
+      setError(parseErrorMessage("AI 服务配置删除失败，请稍后重试。", requestError));
       return false;
     } finally {
       setIsMutating(false);
@@ -125,7 +151,10 @@ export function useAiSettings(isEnabled = true) {
 
   return {
     apiKeyDraft,
+    baseUrlDraft,
+    chatModelDraft,
     deleteApiKey,
+    embeddingModelDraft,
     error,
     feedback,
     isLoading,
@@ -133,6 +162,9 @@ export function useAiSettings(isEnabled = true) {
     reloadSettings: loadSettings,
     saveApiKey,
     setApiKeyDraft,
+    setBaseUrlDraft,
+    setChatModelDraft,
+    setEmbeddingModelDraft,
     settings
   };
 }

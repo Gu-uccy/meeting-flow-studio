@@ -5,6 +5,7 @@ import {
   buildTemplateVersionDiffRows,
   countTemplateVersionChanges
 } from "../../lib/templateVersionDiff";
+import { SelectableCardList } from "../common/SelectableCardList";
 
 type WorkflowTemplateVersionPanelProps = {
   isCanvasDirty: boolean;
@@ -116,17 +117,17 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
             <strong>版本记录</strong>
             <span>{versions.length} 条</span>
           </div>
-          {versions.length > 0 ? (
-            versions.slice(0, 8).map((version) => (
-              <article className="workflow-template-version-row" key={version.id}>
-                <div>
-                  <strong>{version.version}</strong>
-                  <span className={`integration-badge integration-badge--${version.status === "published" ? "ready" : "attention"}`}>
-                    {version.status === "published" ? "已发布" : "快照"}
-                  </span>
-                </div>
-                <p>{version.summary}</p>
-                <small>{version.createdBy} · {formatDateTime(version.createdAt)} · {version.nodes.length} 节点 / {version.edges.length} 连线</small>
+          <SelectableCardList
+            ariaLabel="模板版本记录"
+            empty={<p className="workflow-template-version-empty">暂无版本记录，保存快照或发布版本后可在此回滚。</p>}
+            items={versions.slice(0, 8).map((version) => ({
+              id: version.id,
+              title: version.version,
+              badge: version.status === "published" ? "已发布" : "快照",
+              badgeClassName: `integration-badge integration-badge--${version.status === "published" ? "ready" : "attention"}`,
+              description: version.summary,
+              meta: `${version.createdBy} · ${formatDateTime(version.createdAt)} · ${version.nodes.length} 节点 / ${version.edges.length} 连线`,
+              actions: (
                 <button
                   className="ghost-button"
                   disabled={isWorkflowActionBusy || isCanvasDirty}
@@ -135,11 +136,10 @@ export function WorkflowTemplateVersionPanel(props: WorkflowTemplateVersionPanel
                 >
                   回滚到此版本
                 </button>
-              </article>
-            ))
-          ) : (
-            <p className="workflow-template-version-empty">暂无版本记录，保存快照或发布版本后可在此回滚。</p>
-          )}
+              )
+            }))}
+            layout="stack"
+          />
         </div>
 
         <div className="workflow-template-version-diff">

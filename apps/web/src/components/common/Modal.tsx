@@ -1,30 +1,28 @@
 import { useEffect, useId, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
-type ModalProps = {
+export type ModalSize = "sm" | "md" | "lg" | "xl";
+
+export type ModalProps = {
   ariaLabel?: string;
   children: ReactNode;
   className?: string;
   closeLabel?: string;
   description?: ReactNode;
   footer?: ReactNode;
+  headerActions?: ReactNode;
   isDismissible?: boolean;
   onClose: () => void;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: ModalSize;
   title: string;
+  /** @deprecated 使用 size="lg" */
   wide?: boolean;
 };
 
-type ConfirmDialogProps = {
-  cancelLabel?: string;
-  confirmLabel?: string;
-  description: ReactNode;
-  isLoading?: boolean;
-  onCancel: () => void;
-  onConfirm: () => void | Promise<void>;
-  title: string;
-  tone?: "default" | "danger";
-};
-
+/**
+ * 应用内内容弹窗共用壳：遮罩、标题栏、可滚动主体、可选页脚。
+ * 提示类交互请用 AlertDialog / ConfirmDialog / PromptDialog 或 dialog.* API。
+ */
 export function Modal({
   ariaLabel,
   children,
@@ -32,6 +30,7 @@ export function Modal({
   closeLabel = "关闭",
   description,
   footer,
+  headerActions,
   isDismissible = true,
   onClose,
   size,
@@ -44,21 +43,28 @@ export function Modal({
   const descriptionId = description ? `${modalId}-description` : undefined;
 
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isDismissible) {
       return;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        event.preventDefault();
         onClose();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isDismissible, onClose]);
 
   function handleBackdropClick() {
@@ -67,13 +73,14 @@ export function Modal({
     }
   }
 
-  return (
+  const node = (
     <div
       aria-describedby={descriptionId}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabel ? undefined : titleId}
       aria-modal="true"
       className="modal-backdrop"
+      data-testid="modal-backdrop"
       onClick={handleBackdropClick}
       role="dialog"
     >
@@ -81,60 +88,32 @@ export function Modal({
         className={`modal-shell modal-shell--${modalSize}${wide ? " modal-shell--wide" : ""}${
           className ? ` ${className}` : ""
         }`}
+        data-testid="modal-shell"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="modal-chrome">
           <div className="modal-heading">
             <strong id={titleId}>{title}</strong>
-            {description && <p id={descriptionId}>{description}</p>}
+            {description ? <p id={descriptionId}>{description}</p> : null}
           </div>
-          {isDismissible && (
-            <button aria-label={closeLabel} className="modal-close" onClick={onClose} type="button">
-              {closeLabel}
-            </button>
-          )}
+          <div className="modal-chrome__actions">
+            {headerActions}
+            {isDismissible ? (
+              <button aria-label={closeLabel} className="modal-close" onClick={onClose} type="button">
+                {closeLabel}
+              </button>
+            ) : null}
+          </div>
         </header>
         <div className="modal-body">{children}</div>
-        {footer && <footer className="modal-footer">{footer}</footer>}
+        {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </div>
     </div>
   );
-}
 
-export function ConfirmDialog({
-  cancelLabel = "取消",
-  confirmLabel = "确认",
-  description,
-  isLoading = false,
-  onCancel,
-  onConfirm,
-  title,
-  tone = "default"
-}: ConfirmDialogProps) {
-  return (
-    <Modal
-      className={`modal-confirm modal-confirm--${tone}`}
-      isDismissible={!isLoading}
-      onClose={onCancel}
-      size="sm"
-      title={title}
-      footer={
-        <>
-          <button className="secondary-button" disabled={isLoading} onClick={onCancel} type="button">
-            {cancelLabel}
-          </button>
-          <button
-            className={tone === "danger" ? "danger-button" : "primary-button"}
-            disabled={isLoading}
-            onClick={() => void onConfirm()}
-            type="button"
-          >
-            {confirmLabel}
-          </button>
-        </>
-      }
-    >
-      <div className="modal-confirm__content">{description}</div>
-    </Modal>
-  );
+  if (typeof document === "undefined") {
+    return node;
+  }
+
+  return createPortal(node, document.body);
 }

@@ -55,6 +55,7 @@ describe("runsConsoleUtils", () => {
       status: "blocked",
       templateId: "",
       meetingId: "",
+      ownerScope: "all",
       search: ""
     });
     expect(filtered.map((run) => run.id)).toEqual(["run-2"]);
@@ -63,8 +64,29 @@ describe("runsConsoleUtils", () => {
       status: "all",
       templateId: "tpl-a",
       meetingId: "",
+      ownerScope: "all",
       search: "周会"
     });
     expect(templateFiltered.map((run) => run.id)).toEqual(["run-1", "run-3"]);
+  });
+
+  it("filters runs by owner scope", () => {
+    const meetings = [
+      { id: "meeting-a", ownerUserId: "user-a" },
+      { id: "meeting-b", ownerUserId: "user-b" }
+    ] as Array<{ id: string; ownerUserId: string }>;
+
+    const mineOnly = filterRunsConsole(sampleRuns, {
+      status: "all",
+      templateId: "",
+      meetingId: "",
+      ownerScope: "mine",
+      search: ""
+    }, {
+      meetings: meetings as never,
+      ownerUserId: "user-a"
+    });
+
+    expect(mineOnly.map((run) => run.id)).toEqual(["run-1", "run-3"]);
   });
 });

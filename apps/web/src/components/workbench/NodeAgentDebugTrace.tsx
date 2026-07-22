@@ -1,5 +1,6 @@
 import type { AiApplication, MeetingRecordWithPermissions, ProductNodeRun, ProductWorkflowRun, ProductWorkflowTemplate } from "@meeting-flow/shared";
 import { formatDateTime } from "../../lib/format";
+import { SelectableCardList } from "../common/SelectableCardList";
 import { RunLatencyWaterfall } from "../workflow/RunLatencyWaterfall";
 
 type NodeAgentDebugTraceProps = {
@@ -62,40 +63,60 @@ export function NodeAgentDebugTrace(props: NodeAgentDebugTraceProps) {
         <article className="app-debug-panel">
           <div className="app-debug-panel__title"><span>Node Trace</span><strong>{template?.nodes.length ?? run.nodeRuns.length} nodes</strong></div>
           <div className="debug-node-list">
-            {run.nodeRuns.map((nodeRun) => {
-              const node = template?.nodes.find((entry) => entry.id === nodeRun.nodeId);
-              const nodeLogs = run.logs.filter((log) => log.nodeId === nodeRun.nodeId);
-              return (
-                <article className="debug-node-row" key={nodeRun.nodeId}>
-                  <div className="debug-node-row__header">
-                    <div><span className={`node-state-badge node-state-badge--${nodeRun.status}`}>{nodeRun.status}</span><strong>{node?.title ?? nodeRun.nodeId}</strong></div>
-                    <small>{formatNodeRunDuration(nodeRun)}</small>
-                  </div>
-                  <div className="debug-node-row__meta"><code>{nodeRun.nodeId}</code><span>{formatNodeRunWindow(nodeRun)}</span></div>
-                  {typeof nodeRun.outputPayload?.inputTokens === "number" || typeof nodeRun.outputPayload?.outputTokens === "number" ? (
-                    <div className="debug-node-row__usage">
-                      <span>Token</span>
-                      <code>
-                        in {Number(nodeRun.outputPayload?.inputTokens ?? 0)} / out {Number(nodeRun.outputPayload?.outputTokens ?? 0)}
-                        {typeof nodeRun.outputPayload?.responseFormat === "string" ? ` / ${nodeRun.outputPayload.responseFormat}` : ""}
-                      </code>
-                    </div>
-                  ) : null}
-                  {nodeRun.errorMessage ? <div className="debug-node-row__error"><span>Error</span><code>{nodeRun.errorMessage}</code></div> : null}
-                  <div className="debug-trace-payloads">
-                    <div><span>Input</span><pre>{stringifyTracePayload(nodeRun.inputPayload)}</pre></div>
-                    <div><span>Output</span><pre>{stringifyTracePayload(nodeRun.outputPayload)}</pre></div>
-                  </div>
-                  {nodeLogs.length > 0 ? (
-                    <div className="debug-node-row__logs">
-                      {nodeLogs.map((log) => (
-                        <code className={`debug-node-row__log debug-node-row__log--${log.level}`} key={log.id}>{log.time} / {log.message}</code>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
+            <SelectableCardList
+              ariaLabel="节点 Trace"
+              items={run.nodeRuns.map((nodeRun) => {
+                const node = template?.nodes.find((entry) => entry.id === nodeRun.nodeId);
+                const nodeLogs = run.logs.filter((log) => log.nodeId === nodeRun.nodeId);
+                return {
+                  id: nodeRun.nodeId,
+                  title: node?.title ?? nodeRun.nodeId,
+                  badge: nodeRun.status,
+                  badgeClassName: `node-state-badge node-state-badge--${nodeRun.status}`,
+                  meta: `${nodeRun.nodeId} · ${formatNodeRunDuration(nodeRun)} · ${formatNodeRunWindow(nodeRun)}`,
+                  className: "selectable-card--rich-body selectable-card--badge-leading debug-node-row",
+                  description: (
+                    <>
+                      {typeof nodeRun.outputPayload?.inputTokens === "number" || typeof nodeRun.outputPayload?.outputTokens === "number" ? (
+                        <div className="debug-node-row__usage">
+                          <span>Token</span>
+                          <code>
+                            in {Number(nodeRun.outputPayload?.inputTokens ?? 0)} / out {Number(nodeRun.outputPayload?.outputTokens ?? 0)}
+                            {typeof nodeRun.outputPayload?.responseFormat === "string" ? ` / ${nodeRun.outputPayload.responseFormat}` : ""}
+                          </code>
+                        </div>
+                      ) : null}
+                      {nodeRun.errorMessage ? (
+                        <div className="debug-node-row__error">
+                          <span>Error</span>
+                          <code>{nodeRun.errorMessage}</code>
+                        </div>
+                      ) : null}
+                      <div className="debug-trace-payloads">
+                        <div>
+                          <span>Input</span>
+                          <pre>{stringifyTracePayload(nodeRun.inputPayload)}</pre>
+                        </div>
+                        <div>
+                          <span>Output</span>
+                          <pre>{stringifyTracePayload(nodeRun.outputPayload)}</pre>
+                        </div>
+                      </div>
+                      {nodeLogs.length > 0 ? (
+                        <div className="debug-node-row__logs">
+                          {nodeLogs.map((log) => (
+                            <code className={`debug-node-row__log debug-node-row__log--${log.level}`} key={log.id}>
+                              {log.time} / {log.message}
+                            </code>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  )
+                };
+              })}
+              layout="stack"
+            />
           </div>
         </article>
         <article className="app-debug-panel">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MeetingMemory } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 type MeetingMemoriesResponse = {
   items: MeetingMemory[];
@@ -45,10 +45,10 @@ export function useMeetingMemories(isEnabled = true, meetingId = "") {
     try {
       const searchParams = new URLSearchParams({
         meetingId,
-        limit: "8"
+        limit: "24"
       });
       const response = await apiClient(`/api/memories?${searchParams.toString()}`);
-      const data = (await response.json()) as Partial<MeetingMemoriesResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMemoriesResponse> & { message?: string };
 
       if (!response.ok || !Array.isArray(data.items)) {
         throw new Error(data.message ?? "会议记忆加载失败，请稍后重试。");
@@ -71,7 +71,7 @@ export function useMeetingMemories(isEnabled = true, meetingId = "") {
         method: "PATCH",
         body: JSON.stringify(patch)
       });
-      const data = (await response.json()) as Partial<MeetingMemoryMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMemoryMutationResponse> & { message?: string };
 
       if (!response.ok || !data.memory) {
         throw new Error(data.message ?? "会议记忆更新失败，请稍后重试。");
@@ -97,7 +97,7 @@ export function useMeetingMemories(isEnabled = true, meetingId = "") {
       const response = await apiClient(`/api/memories/${memoryId}`, {
         method: "DELETE"
       });
-      const data = (await response.json()) as { message?: string };
+      const data = (await readJson(response)) as { message?: string };
 
       if (!response.ok) {
         throw new Error(data.message ?? "会议记忆删除失败，请稍后重试。");
@@ -113,11 +113,56 @@ export function useMeetingMemories(isEnabled = true, meetingId = "") {
     }
   }, []);
 
+  const createMemory = useCallback(
+    async (input: {
+      content: string;
+      kind?: MeetingMemory["kind"];
+      visibility?: MeetingMemory["visibility"];
+      isPinned?: boolean;
+    }) => {
+      if (!meetingId) {
+        setError("请先选择会议");
+        return null;
+      }
+
+      setIsMutating(true);
+      setError("");
+
+      try {
+        const response = await apiClient("/api/memories", {
+          method: "POST",
+          body: JSON.stringify({
+            meetingId,
+            content: input.content,
+            kind: input.kind,
+            visibility: input.visibility,
+            isPinned: input.isPinned
+          })
+        });
+        const data = (await readJson(response)) as Partial<MeetingMemoryMutationResponse> & { message?: string };
+
+        if (!response.ok || !data.memory) {
+          throw new Error(data.message ?? "会议记忆创建失败，请稍后重试。");
+        }
+
+        setItems((currentItems) => [data.memory as MeetingMemory, ...currentItems].sort(sortMemories));
+        return data.memory;
+      } catch (requestError) {
+        setError(parseErrorMessage("会议记忆创建失败，请稍后重试。", requestError));
+        return null;
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [meetingId]
+  );
+
   useEffect(() => {
     void loadMemories();
   }, [loadMemories]);
 
   return {
+    createMemory,
     deleteMemory,
     error,
     isLoading,

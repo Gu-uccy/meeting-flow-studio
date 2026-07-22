@@ -9,6 +9,7 @@ import {
   type ProductWorkflowRun,
   type ProductWorkflowTemplate
 } from "@meeting-flow/shared";
+import { SelectableCardList } from "../common/SelectableCardList";
 import {
   agentActionPriorityLabels,
   agentInsightKindLabels
@@ -18,19 +19,13 @@ type WorkflowAuxStripProps = {
   agentError: string;
   agentRun: MeetingAgentRun | null;
   blockedNodeRun?: ProductNodeRun;
-  calendarStatusMessage: string;
   canSyncFeishuCalendar: boolean;
-  canSyncGoogleCalendar: boolean;
   feishuCalendarStatusMessage: string;
   feishuRedirectUri: string;
-  googleRedirectUri: string;
   isAgentRunning: boolean;
-  isCalendarLoading: boolean;
   isFeishuCalendarConfigured: boolean;
   isFeishuCalendarConnected: boolean;
   isFeishuCalendarLoading: boolean;
-  isGoogleCalendarConfigured: boolean;
-  isGoogleCalendarConnected: boolean;
   isMemoryLoading: boolean;
   isMemoryMutating: boolean;
   isWorkflowActionBusy: boolean;
@@ -40,7 +35,6 @@ type WorkflowAuxStripProps = {
   onAdvanceWorkflowRun: () => void;
   onCancelWorkflowRun: () => void;
   onConnectFeishuCalendar: () => void;
-  onConnectGoogleCalendar: () => void;
   onDeleteMemory: (memoryId: string) => Promise<boolean>;
   onEditMeeting: () => void;
   onOpenDetail: () => void;
@@ -48,8 +42,8 @@ type WorkflowAuxStripProps = {
   onRetryWorkflowRun: () => void;
   onRunAgent: () => void;
   onStartWorkflowRun: () => void;
+  onRefreshFeishuMeeting: () => void;
   onSyncFeishuCalendar: () => void;
-  onSyncGoogleCalendar: () => void;
   onUpdateMemory: (
     memoryId: string,
     patch: Partial<Pick<MeetingMemory, "content" | "kind" | "visibility" | "isPinned">>
@@ -74,19 +68,13 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
     agentError,
     agentRun,
     blockedNodeRun,
-    calendarStatusMessage,
     canSyncFeishuCalendar,
-    canSyncGoogleCalendar,
     feishuCalendarStatusMessage,
     feishuRedirectUri,
-    googleRedirectUri,
     isAgentRunning,
-    isCalendarLoading,
     isFeishuCalendarConfigured,
     isFeishuCalendarConnected,
     isFeishuCalendarLoading,
-    isGoogleCalendarConfigured,
-    isGoogleCalendarConnected,
     isMemoryLoading,
     isMemoryMutating,
     isWorkflowActionBusy,
@@ -96,7 +84,6 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
     onAdvanceWorkflowRun,
     onCancelWorkflowRun,
     onConnectFeishuCalendar,
-    onConnectGoogleCalendar,
     onDeleteMemory,
     onEditMeeting,
     onOpenDetail,
@@ -104,8 +91,8 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
     onRetryWorkflowRun,
     onRunAgent,
     onStartWorkflowRun,
+    onRefreshFeishuMeeting,
     onSyncFeishuCalendar,
-    onSyncGoogleCalendar,
     onUpdateMemory,
     onUpdateStatus,
     resolutionNote,
@@ -127,13 +114,20 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
               <strong>会议议程预览</strong>
               <span>{selectedMeeting.agendaItems.length} 项</span>
             </div>
-            {selectedMeeting.agendaItems.map((item) => (
-              <article className="ide-list-row" key={item.id}>
-                <i className={item.completed ? "is-done" : ""} />
-                <span>{item.title}</span>
-                <small>{item.completed ? "已完成" : "待讨论"}</small>
-              </article>
-            ))}
+            {selectedMeeting.agendaItems.length === 0 ? (
+              <p className="memory-empty">暂无议程。</p>
+            ) : (
+              <SelectableCardList
+                ariaLabel="会议议程"
+                items={selectedMeeting.agendaItems.map((item) => ({
+                  id: item.id,
+                  title: item.title,
+                  badge: item.completed ? "已完成" : "待讨论",
+                  className: item.completed ? "is-done" : ""
+                }))}
+                layout="stack"
+              />
+            )}
           </section>
 
           <section>
@@ -141,18 +135,25 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
               <strong>参会人与待办</strong>
               <span>{selectedMeeting.participants.length} 人</span>
             </div>
-            {selectedMeeting.participants.slice(0, 3).map((participant) => (
-              <article className="ide-list-row" key={participant.id}>
-                <b>{participant.name.slice(0, 1)}</b>
-                <span>{participant.name}</span>
-                <small>{participantRoleLabels[participant.role]}</small>
-              </article>
-            ))}
-            {selectedMeeting.actionItems.slice(0, 3).map((item) => (
-              <article className="ide-list-row ide-list-row--action" key={item.id}>
-                <span>{item.content} / {item.owner} / {actionItemStatusLabels[item.status]}</span>
-              </article>
-            ))}
+            <SelectableCardList
+              ariaLabel="参会人"
+              items={selectedMeeting.participants.slice(0, 3).map((participant) => ({
+                id: participant.id,
+                title: participant.name,
+                badge: participantRoleLabels[participant.role]
+              }))}
+              layout="stack"
+            />
+            <SelectableCardList
+              ariaLabel="待办预览"
+              items={selectedMeeting.actionItems.slice(0, 3).map((item) => ({
+                id: item.id,
+                title: item.content,
+                meta: `${item.owner} · ${actionItemStatusLabels[item.status]}`,
+                className: "selectable-card--title-clamp"
+              }))}
+              layout="stack"
+            />
           </section>
 
           <section className="meeting-memory-strip" aria-label="会议长期记忆">
@@ -161,25 +162,41 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
               <span>{isMemoryLoading ? "同步中" : `${meetingMemories.length} 条`}</span>
             </div>
             {memoryError ? <p className="memory-empty">{memoryError}</p> : null}
-            {!memoryError && !isMemoryLoading && meetingMemories.length === 0 && (
-              <p className="memory-empty">启动并完成一次流程后，会沉淀议程、待办和阻塞经验。</p>
-            )}
-            {meetingMemories.slice(0, 3).map((memory) => (
-              <article className="ide-list-row memory-row" key={memory.id}>
-                <div className="memory-row__body">
-                  <span>{memory.content}</span>
-                  <small>{memory.isPinned ? "已置顶 / " : ""}{meetingMemoryKindLabels[memory.kind]} / {memory.source}</small>
-                </div>
-                <div className="memory-row__actions">
-                  <button className="memory-action-button" disabled={isMemoryMutating || isWorkflowActionBusy} onClick={() => void onUpdateMemory(memory.id, { isPinned: !memory.isPinned })} type="button">
-                    {memory.isPinned ? "取消置顶" : "置顶"}
-                  </button>
-                  <button className="memory-action-button memory-action-button--danger" disabled={isMemoryMutating || isWorkflowActionBusy} onClick={() => void onDeleteMemory(memory.id)} type="button">
-                    删除
-                  </button>
-                </div>
-              </article>
-            ))}
+            <SelectableCardList
+              ariaLabel="会议记忆"
+              empty={
+                !memoryError && !isMemoryLoading && meetingMemories.length === 0 ? (
+                  <p className="memory-empty">启动并完成一次流程后，会沉淀议程、待办和阻塞经验。</p>
+                ) : null
+              }
+              items={meetingMemories.slice(0, 3).map((memory) => ({
+                id: memory.id,
+                title: memory.content,
+                meta: `${memory.isPinned ? "已置顶 · " : ""}${meetingMemoryKindLabels[memory.kind]} · ${memory.source}`,
+                className: "selectable-card--title-clamp",
+                actions: (
+                  <>
+                    <button
+                      className="memory-action-button"
+                      disabled={isMemoryMutating || isWorkflowActionBusy}
+                      onClick={() => void onUpdateMemory(memory.id, { isPinned: !memory.isPinned })}
+                      type="button"
+                    >
+                      {memory.isPinned ? "取消置顶" : "置顶"}
+                    </button>
+                    <button
+                      className="memory-action-button memory-action-button--danger"
+                      disabled={isMemoryMutating || isWorkflowActionBusy}
+                      onClick={() => void onDeleteMemory(memory.id)}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  </>
+                )
+              }))}
+              layout="stack"
+            />
           </section>
 
           <section className="meeting-agent-card" aria-label="内置会议 Agent">
@@ -194,44 +211,48 @@ export function WorkflowAuxStrip(props: WorkflowAuxStripProps) {
             <button className="primary-button meeting-agent-card__button" disabled={!selectedMeeting || isWorkflowActionBusy} onClick={() => void onRunAgent()} type="button">
               {isAgentRunning ? "Agent 运行中" : "运行工作流 Agent"}
             </button>
-            {agentRun && agentRun.actions.length > 0 && (
-              <div className="meeting-agent-card__list">
-                {agentRun.actions.slice(0, 3).map((action) => (
-                  <article className={`meeting-agent-card__item priority-${action.priority}`} key={action.id}>
-                    <span>{agentActionPriorityLabels[action.priority]}</span>
-                    <strong>{action.title}</strong>
-                    <p>{action.description}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-            {agentRun && agentRun.insights.length > 0 && (
-              <div className="meeting-agent-card__insights">
-                {agentRun.insights.slice(0, 2).map((insight) => (
-                  <article key={insight.id}>
-                    <span>{agentInsightKindLabels[insight.kind]}</span>
-                    <strong>{insight.title}</strong>
-                  </article>
-                ))}
-              </div>
-            )}
+            {agentRun && agentRun.actions.length > 0 ? (
+              <SelectableCardList
+                ariaLabel="Agent 建议动作"
+                className="meeting-agent-card__list"
+                items={agentRun.actions.slice(0, 3).map((action) => ({
+                  id: action.id,
+                  title: action.title,
+                  badge: agentActionPriorityLabels[action.priority],
+                  description: action.description,
+                  className: `selectable-card--badge-leading priority-${action.priority}`
+                }))}
+                layout="stack"
+              />
+            ) : null}
+            {agentRun && agentRun.insights.length > 0 ? (
+              <SelectableCardList
+                ariaLabel="Agent 洞察"
+                className="meeting-agent-card__insights"
+                items={agentRun.insights.slice(0, 2).map((insight) => ({
+                  id: insight.id,
+                  title: insight.title,
+                  badge: agentInsightKindLabels[insight.kind],
+                  className: "selectable-card--badge-leading"
+                }))}
+                layout="stack"
+              />
+            ) : null}
           </section>
         </div>
       )}
 
       {selectedMeeting && (
-        <section className="calendar-integration-card" aria-label="会议日历接入">
+        <section className="calendar-integration-card" aria-label="飞书接入">
           <div>
-            <span>会议日历接入</span>
-            <strong>Google Calendar / 飞书日历</strong>
-            <p>{calendarStatusMessage || feishuCalendarStatusMessage || "同步会议时间、参会人和议程到外部日历。"}</p>
-            {googleRedirectUri && <code>Google Redirect URI: {googleRedirectUri}</code>}
+            <span>飞书接入</span>
+            <strong>飞书日历与视频会议</strong>
+            <p>{feishuCalendarStatusMessage || "同步会议时间、参会人和议程到飞书。"}</p>
             {feishuRedirectUri && <code>Feishu Redirect URI: {feishuRedirectUri}</code>}
           </div>
           <div className="calendar-integration-card__actions">
-            <button className="ghost-button" disabled={isWorkflowActionBusy || isCalendarLoading || !canSyncGoogleCalendar} onClick={() => void onSyncGoogleCalendar()} type="button">同步 Google</button>
-            <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onSyncFeishuCalendar()} type="button">同步飞书</button>
-            <button className="ghost-button" disabled={isWorkflowActionBusy || isCalendarLoading || !isGoogleCalendarConfigured || isGoogleCalendarConnected} onClick={() => void onConnectGoogleCalendar()} type="button">连接 Google</button>
+            <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onSyncFeishuCalendar()} type="button">同步飞书会议</button>
+            <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !canSyncFeishuCalendar} onClick={() => void onRefreshFeishuMeeting()} type="button">刷新录制状态</button>
             <button className="ghost-button" disabled={isWorkflowActionBusy || isFeishuCalendarLoading || !isFeishuCalendarConfigured || isFeishuCalendarConnected} onClick={() => void onConnectFeishuCalendar()} type="button">连接飞书</button>
           </div>
         </section>

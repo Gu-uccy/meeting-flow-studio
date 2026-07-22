@@ -5,6 +5,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.test.ts"],
+    setupFiles: ["./src/__tests__/setupEmbeddingsMock.ts"],
     testTimeout: 30000,
     hookTimeout: 15000,
     // Run test files sequentially to avoid SQLite contention
