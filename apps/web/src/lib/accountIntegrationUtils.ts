@@ -30,7 +30,7 @@ export function getAiIntegrationStatus(settings: AiSettings, isLoading: boolean)
     return {
       tone: "ready",
       label: "用户 Key",
-      detail: `已配置 Anthropic Key ${settings.keyHint}`
+      detail: `OpenAI 兼容 · ${settings.keyHint} · ${settings.chatModel}`
     };
   }
 
@@ -38,14 +38,14 @@ export function getAiIntegrationStatus(settings: AiSettings, isLoading: boolean)
     return {
       tone: "ready",
       label: "服务端 Key",
-      detail: "使用环境变量中的 Anthropic API Key"
+      detail: `使用环境变量 AI_API_KEY / OPENAI_API_KEY · ${settings.chatModel}`
     };
   }
 
   return {
-    tone: "attention",
-    label: "未配置",
-    detail: "Agent 与 LLM 节点将降级为本地规则"
+    tone: "unavailable",
+    label: "不可用",
+    detail: "未配置 AI Key：对话、Agent、知识检索与 AI 节点无法使用"
   };
 }
 
@@ -63,8 +63,8 @@ export function getCalendarIntegrationStatus(params: {
   if (!params.isConfigured) {
     return {
       tone: "unavailable",
-      label: "未启用",
-      detail: params.statusMessage || `服务端尚未配置 ${params.providerLabel} OAuth`
+      label: "未配置",
+      detail: params.statusMessage || `服务端尚未配置 ${params.providerLabel} OAuth，无法同步`
     };
   }
 
@@ -85,10 +85,19 @@ export function getCalendarIntegrationStatus(params: {
 
 export function getKnowledgeIntegrationStatus(
   index: KnowledgeIndexStats | null,
-  isLoading: boolean
+  isLoading: boolean,
+  available = true
 ): IntegrationStatus {
   if (isLoading) {
     return { tone: "loading", label: "加载中", detail: "正在读取向量索引状态" };
+  }
+
+  if (!available) {
+    return {
+      tone: "unavailable",
+      label: "不可用",
+      detail: "未配置 AI API Key，知识库向量检索无法使用"
+    };
   }
 
   if (!index) {
@@ -112,6 +121,13 @@ export function getKnowledgeIntegrationStatus(
     label: "待构建",
     detail: `索引为空，上传记忆/文档后重建 · ${index.embeddingModel}`
   };
+}
+
+export function formatEmbeddingModelLabel(embeddingModel: string) {
+  if (!embeddingModel || embeddingModel === "unavailable") {
+    return "未配置（需 AI API Key）";
+  }
+  return embeddingModel;
 }
 
 export function getServiceApiIntegrationStatus(

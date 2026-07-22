@@ -11,22 +11,28 @@ import {
 describe("accountIntegrationUtils", () => {
   it("describes AI integration by key source", () => {
     expect(getAiIntegrationStatus({
-      provider: "anthropic",
+      provider: "openai-compatible",
       isUserConfigured: true,
       isEnvironmentConfigured: false,
       keySource: "user",
       keyHint: "****abcd",
+      baseUrl: "https://api.openai.com/v1",
+      chatModel: "gpt-4o-mini",
+      embeddingModel: "text-embedding-3-small",
       updatedAt: "2026-07-07T00:00:00.000Z"
     }, false).label).toBe("用户 Key");
 
     expect(getAiIntegrationStatus({
-      provider: "anthropic",
+      provider: "openai-compatible",
       isUserConfigured: false,
       isEnvironmentConfigured: false,
       keySource: "none",
       keyHint: "",
+      baseUrl: "https://api.openai.com/v1",
+      chatModel: "gpt-4o-mini",
+      embeddingModel: "text-embedding-3-small",
       updatedAt: ""
-    }, false).tone).toBe("attention");
+    }, false)).toMatchObject({ tone: "unavailable", label: "不可用" });
   });
 
   it("describes calendar integration states", () => {
@@ -42,7 +48,7 @@ describe("accountIntegrationUtils", () => {
       isConfigured: false,
       isConnected: false,
       isLoading: false
-    }).tone).toBe("unavailable");
+    })).toMatchObject({ tone: "unavailable", label: "未配置" });
   });
 
   it("describes knowledge index readiness", () => {
@@ -50,8 +56,15 @@ describe("accountIntegrationUtils", () => {
       chunkCount: 12,
       chunking: { chunkOverlap: 50, chunkSize: 500 },
       dimensions: 1536,
-      embeddingModel: "mock-local"
+      embeddingModel: "text-embedding-3-small"
     }, false).tone).toBe("ready");
+
+    expect(getKnowledgeIntegrationStatus({
+      chunkCount: 0,
+      chunking: { chunkOverlap: 50, chunkSize: 500 },
+      dimensions: 0,
+      embeddingModel: "unavailable"
+    }, false, false)).toMatchObject({ tone: "unavailable", label: "不可用" });
   });
 
   it("builds platform overview stats", () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MeetingDashboardSummary, MeetingRecordWithPermissions } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 type FeishuIntegrationStatus = {
   provider: "feishu";
@@ -56,7 +56,7 @@ export function useFeishuCalendarIntegration(
 
     try {
       const response = await apiClient("/api/integrations/feishu/status");
-      const data = (await response.json()) as FeishuIntegrationStatus;
+      const data = (await readJson(response)) as FeishuIntegrationStatus;
 
       if (!response.ok) {
         throw new Error(data.message ?? "飞书日历状态加载失败");
@@ -98,7 +98,7 @@ export function useFeishuCalendarIntegration(
 
     try {
       const response = await apiClient("/api/integrations/feishu/auth-url");
-      const data = (await response.json()) as { authUrl?: string; message?: string; redirectUri?: string };
+      const data = (await readJson(response)) as { authUrl?: string; message?: string; redirectUri?: string };
 
       if (!response.ok || !data.authUrl) {
         throw new Error(data.message ?? "飞书授权地址获取失败");
@@ -125,7 +125,7 @@ export function useFeishuCalendarIntegration(
       const response = await apiClient(`/api/meetings/${meetingId}/sync-feishu-calendar`, {
         method: "POST"
       });
-      const data = (await response.json()) as Partial<MeetingMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
 
       if (!response.ok || !data.meeting || !data.summary) {
         throw new Error(data.message ?? "飞书日历同步失败");
@@ -142,6 +142,37 @@ export function useFeishuCalendarIntegration(
     }
   }
 
+  async function refreshMeetingRecording(
+    meetingId: string,
+    options?: { meetingId?: string; meetingNo?: string }
+  ) {
+    setIsMutating(true);
+    setError("");
+    setFeedback("");
+
+    try {
+      const response = await apiClient(`/api/meetings/${meetingId}/refresh-feishu-meeting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options ?? {})
+      });
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
+
+      if (!response.ok || !data.meeting || !data.summary) {
+        throw new Error(data.message ?? "刷新飞书录制状态失败");
+      }
+
+      onMeetingSynced?.(data.meeting, data.summary);
+      setFeedback(data.message ?? "已刷新飞书录制状态");
+      return data.meeting;
+    } catch (requestError) {
+      setError(parseErrorMessage("刷新飞书录制状态失败", requestError));
+      return null;
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
   return {
     connectFeishuCalendar,
     error,
@@ -151,6 +182,7 @@ export function useFeishuCalendarIntegration(
     isLoading,
     isMutating,
     redirectUri: status?.redirectUri ?? "",
+    refreshMeetingRecording,
     reloadStatus: loadStatus,
     statusMessage: status?.message ?? "",
     syncMeeting

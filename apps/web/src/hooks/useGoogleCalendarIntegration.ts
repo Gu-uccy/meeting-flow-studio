@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MeetingDashboardSummary, MeetingRecordWithPermissions } from "@meeting-flow/shared";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, readJson } from "../lib/apiClient";
 
 type GoogleIntegrationStatus = {
   provider: "google";
@@ -55,7 +55,7 @@ export function useGoogleCalendarIntegration(
 
     try {
       const response = await apiClient("/api/integrations/google/status");
-      const data = (await response.json()) as GoogleIntegrationStatus;
+      const data = (await readJson(response)) as GoogleIntegrationStatus;
 
       if (!response.ok) {
         throw new Error(data.message ?? "Google Calendar 状态加载失败");
@@ -97,7 +97,7 @@ export function useGoogleCalendarIntegration(
 
     try {
       const response = await apiClient("/api/integrations/google/auth-url");
-      const data = (await response.json()) as { authUrl?: string; message?: string; redirectUri?: string };
+      const data = (await readJson(response)) as { authUrl?: string; message?: string; redirectUri?: string };
 
       if (!response.ok || !data.authUrl) {
         throw new Error(data.message ?? "Google Calendar 授权地址获取失败");
@@ -124,7 +124,7 @@ export function useGoogleCalendarIntegration(
       const response = await apiClient(`/api/meetings/${meetingId}/sync-google-calendar`, {
         method: "POST"
       });
-      const data = (await response.json()) as Partial<MeetingMutationResponse> & { message?: string };
+      const data = (await readJson(response)) as Partial<MeetingMutationResponse> & { message?: string };
 
       if (!response.ok || !data.meeting || !data.summary) {
         throw new Error(data.message ?? "Google Calendar 同步失败");

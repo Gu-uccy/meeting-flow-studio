@@ -8,7 +8,9 @@ import { ensureProductWorkflowNodeExecutors } from "@meeting-flow/shared";
 import { loadMeetings } from "./meetingStore.js";
 import { loadMeetingMemories } from "./memoryStore.js";
 import { syncVectorKnowledgeIndex } from "./vectorStore.js";
-import { listKnowledgeDocuments } from "./knowledgeDocumentStore.js";
+import { isEmbeddingAvailable } from "./services/embeddings.js";
+import { isEnvironmentAiConfigured } from "./services/aiServiceConfig.js";
+import { listKnowledgeDocuments, ensureSeedKnowledgeDocuments } from "./knowledgeDocumentStore.js";
 import { loadWorkflowRuns, loadWorkflowTemplates } from "./workflowStore.js";
 import { loadUsers, migrateExistingMeetings } from "./userStore.js";
 import { loadWorkspaces } from "./workspaceStore.js";
@@ -27,6 +29,7 @@ import { workflowRoutes } from "./routes/workflows.js";
 import { appRoutes } from "./routes/apps.js";
 import { aiRoutes } from "./routes/ai.js";
 import { integrationRoutes } from "./routes/integrations.js";
+import { feishuEventRoutes } from "./routes/feishuEvents.js";
 import { agentRoutes } from "./routes/agent.js";
 import { serviceApiRoutes } from "./routes/serviceApi.js";
 import { memoryRoutes } from "./routes/memories.js";
@@ -77,8 +80,8 @@ app.addHook("onRequest", async (request, reply) => {
   const url = request.url;
   const isAuthRoute = url.startsWith("/api/auth/");
 
-  // Skip rate limiting for health check and static
-  if (url === "/health") return;
+  // Skip rate limiting for health check and Feishu event callbacks
+  if (url === "/health" || url.startsWith("/api/integrations/feishu/events")) return;
 
   const key = getRateLimitKey(ip, isAuthRoute ? "auth" : "general");
   const now = Date.now();
@@ -123,6 +126,7 @@ await app.register(websocket);
 
 assertDatabaseConfig();
 await ensureDatabaseReady();
+await ensureSeedKnowledgeDocuments();
 
 const meetings: MeetingRecord[] = await loadMeetings();
 const meetingMemories: MeetingMemory[] = await loadMeetingMemories();
@@ -130,8 +134,17 @@ const workflowRuns: ProductWorkflowRun[] = await loadWorkflowRuns();
 const workflowTemplates: ProductWorkflowTemplate[] = (await loadWorkflowTemplates()).map(ensureProductWorkflowNodeExecutors);
 
 await loadUsers();
+await loadWorkspaces();
 await migrateExistingMeetings();
-await syncVectorKnowledgeIndex(meetingMemories, meetings, await listKnowledgeDocuments());
+try {
+  if (isEnvironmentAiConfigured() && isEmbeddingAvailable()) {
+    await syncVectorKnowledgeIndex(meetingMemories, meetings, await listKnowledgeDocuments());
+  } else {
+    console.info("[startup] 未配置 AI_API_KEY / OPENAI_API_KEY，跳过向量索引启动同步");
+  }
+} catch (error) {
+  console.warn("[startup] 向量索引启动同步跳过:", error instanceof Error ? error.message : error);
+}
 
 const wsClients = new Set<WebSocket>();
 
@@ -181,8 +194,11 @@ await app.register(async (subApp) => agentRoutes(subApp, ctx));
 await app.register(async (subApp) => serviceApiRoutes(subApp, ctx));
 await app.register(async (subApp) => memoryRoutes(subApp, ctx));
 await app.register(async (subApp) => knowledgeRoutes(subApp, ctx));
+await app.register(async (subApp) => chatRoutes(subApp, ctx));
+await app.register(workspaceRoutes);
 await app.register(aiRoutes);
 await app.register(integrationRoutes);
+await app.register(async (subApp) => feishuEventRoutes(subApp, ctx));
 
 // ── Start ──
 
