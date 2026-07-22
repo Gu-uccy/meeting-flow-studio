@@ -27,6 +27,7 @@ import { workflowRoutes } from "./routes/workflows.js";
 import { appRoutes } from "./routes/apps.js";
 import { aiRoutes } from "./routes/ai.js";
 import { integrationRoutes } from "./routes/integrations.js";
+import { feishuEventRoutes } from "./routes/feishuEvents.js";
 import { agentRoutes } from "./routes/agent.js";
 import { serviceApiRoutes } from "./routes/serviceApi.js";
 import { memoryRoutes } from "./routes/memories.js";
@@ -78,7 +79,7 @@ app.addHook("onRequest", async (request, reply) => {
   const isAuthRoute = url.startsWith("/api/auth/");
 
   // Skip rate limiting for health check and static
-  if (url === "/health") return;
+  if (url === "/health" || url.startsWith("/api/integrations/feishu/events")) return;
 
   const key = getRateLimitKey(ip, isAuthRoute ? "auth" : "general");
   const now = Date.now();

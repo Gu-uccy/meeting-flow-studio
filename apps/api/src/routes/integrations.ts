@@ -44,7 +44,7 @@ export async function integrationRoutes(app: FastifyInstance) {
     const isConnected = Boolean(account && missingScopes.length === 0);
     return {
       provider: "feishu", isConfigured: config.isConfigured, isConnected, redirectUri: config.redirectUri, calendarId: config.calendarId, missingScopes,
-      message: !config.isConfigured ? "请配置 FEISHU_APP_ID、FEISHU_APP_SECRET 和 FEISHU_REDIRECT_URI" : isConnected ? "飞书日历已连接，可以同步会议" : account ? `当前飞书授权缺少日历权限，请重新连接飞书：${missingScopes.join(", ")}` : "飞书日历已配置，请连接飞书完成用户授权",
+      message: !config.isConfigured ? "请配置 FEISHU_APP_ID、FEISHU_APP_SECRET 和 FEISHU_REDIRECT_URI" : isConnected ? "飞书已连接，可同步日历、视频会议并刷新录制状态" : account ? `当前飞书授权缺少权限，请重新连接飞书：${missingScopes.join(", ")}` : "飞书已配置，请连接飞书完成用户授权",
     };
   });
 
@@ -62,7 +62,7 @@ export async function integrationRoutes(app: FastifyInstance) {
     try {
       const decoded = app.jwt.verify<{ sub: string }>(query.state);
       await exchangeFeishuCode(decoded.sub, query.code);
-      return reply.type("text/html; charset=utf-8").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><title>飞书日历已连接</title></head><body><main style="font-family: system-ui, sans-serif; padding: 32px;"><h1>飞书日历已连接</h1><p>现在可以回到 Meeting Flow Studio，把会议同步到飞书日历。</p><script>setTimeout(() => window.close(), 1200);</script></main></body></html>`);
+      return reply.type("text/html; charset=utf-8").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><title>飞书已连接</title></head><body><main style="font-family: system-ui, sans-serif; padding: 32px;"><h1>飞书已连接</h1><p>现在可以回到 Meeting Flow Studio，同步飞书日历与视频会议，并在会后刷新录制状态。</p><script>setTimeout(() => window.close(), 1200);</script></main></body></html>`);
     } catch (error) {
       return reply.code(400).type("text/html; charset=utf-8").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><title>飞书日历连接失败</title></head><body><main style="font-family: system-ui, sans-serif; padding: 32px;"><h1>飞书日历连接失败</h1><p>${error instanceof Error ? error.message : "授权失败，请重试。"}</p></main></body></html>`);
     }
