@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  MeetingRecord,
-  ProductWorkflowNode,
-  ProductWorkflowRun,
-  ProductWorkflowTemplate
+import {
+  DEFAULT_WORKSPACE_ID,
+  type MeetingRecord,
+  type ProductWorkflowNode,
+  type ProductWorkflowRun,
+  type ProductWorkflowTemplate
 } from "@meeting-flow/shared";
 import {
   buildDroppedNode,
@@ -43,6 +44,7 @@ function makeTemplate(id: string, category: ProductWorkflowTemplate["category"],
     description: "",
     category,
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     nodes: nodeIds.map((nodeId, index) => makeNode(nodeId, { position: { x: index * 100, y: 0 } })),
     edges: [],
     updatedAt: "2026-01-01T00:00:00.000Z"

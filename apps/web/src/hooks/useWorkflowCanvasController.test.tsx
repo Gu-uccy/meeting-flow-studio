@@ -11,6 +11,7 @@ import type {
   ProductWorkflowRun,
   ProductWorkflowTemplate
 } from "@meeting-flow/shared";
+import { DEFAULT_WORKSPACE_ID } from "@meeting-flow/shared";
 import type { WorkflowNodeData } from "../components/workflow/workflowPanelTypes";
 import {
   useWorkflowCanvasController,
@@ -53,6 +54,7 @@ function makeTemplate(
     description: "",
     category,
     status: "published",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     nodes: nodeIds.map((nodeId, index) => makeNode(nodeId, { position: { x: index * 120, y: 40 } })),
     edges,
     updatedAt: "2026-01-01T00:00:00.000Z"

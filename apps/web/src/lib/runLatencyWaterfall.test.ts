@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ProductWorkflowRun } from "@meeting-flow/shared";
+import { DEFAULT_WORKSPACE_ID, type ProductWorkflowRun } from "@meeting-flow/shared";
 import { buildRunLatencyWaterfall, getRunLatencyAxisMarks } from "./runLatencyWaterfall";
 
 const sampleRun: ProductWorkflowRun = {
@@ -42,6 +42,7 @@ describe("buildRunLatencyWaterfall", () => {
       description: "",
       category: "weekly",
       status: "published",
+      workspaceId: DEFAULT_WORKSPACE_ID,
       updatedAt: "2026-06-01T00:00:00.000Z",
       nodes: [
         { id: "intake", kind: "trigger", title: "触发", description: "", owner: "ops", position: { x: 0, y: 0 }, inputs: [], outputs: [], configFields: [] },
